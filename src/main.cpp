@@ -88,17 +88,9 @@ void rainbow(int pixels_per_second = 30) {
 }
 
 void explosion() {
-    //strip.clear();
-    // for(int i = 0; i < NUMLEDS; ++i) {
-      // auto color = strip.ColorHSV(500, 200, 20);
-      // strip.setPixelColor(i, color);
-    // }
-    // strip.show();
-    // return;
-
   uint32_t ms = millis();
   static bool started = false;
-  static int16_t center;
+  static int16_t center_led;
   static uint32_t start_millis = 0;
   static int16_t hue;
   const int16_t max_radius_in_leds = 10;
@@ -108,7 +100,7 @@ void explosion() {
   
   if(!started) {
       started = true;
-      center = rand() % NUMLEDS;
+      center_led = rand() % NUMLEDS;
       start_millis = ms;
       hue = rand();
       return;
@@ -120,7 +112,7 @@ void explosion() {
     if(elapsed_ms < explosion_ms) {
       for(int i = 0; i < NUMLEDS; ++i) {
 
-        auto distance = abs(i-center);
+        auto distance = abs(i-center_led);
         if( abs(distance - radius_in_leds)<2) {
           strip.setPixelColor(i,strip.ColorHSV(hue, 250, intensity));
         } else {
@@ -157,7 +149,7 @@ void trans() {
   auto  pink = strip.ColorHSV(degrees_to_hex(350), 30* 0xff/100, 20);
   auto  white = strip.Color(20, 23, 20);
 
-  repeat({light_blue, light_blue, pink, pink, white, white, pink, pink, light_blue, light_blue, black, black});
+  repeat({light_blue, light_blue, pink, pink, white, white, pink, pink});
 }
 
 void usa() {
@@ -170,15 +162,17 @@ void usa() {
 
 void loop() {
   //trans();
-  //rainbow();
+  rainbow();
   //usa();
   //pattern1();
   //rgb();
   //repeat({strip.Color(18,0,22)});// purple
+  //repeat({strip.Color(20,10,0), strip.Color(25,16,0),strip.Color(14,5,2)});// orange/brown?
+  //repeat({strip.Color(20,0,0), strip.Color(0,20,0)});// red/green
 
-  explosion();
+  //explosion();
   strip.show();
-  delay(100);
+  delay(20);
  } // loop
 
  
