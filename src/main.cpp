@@ -3,6 +3,7 @@
 #ifdef __AVR__
   #include <avr/power.h>
 #endif
+#include <vector>
 
 // Neopixel constants
 #define PIN 15        // Arduino pin for the LED strand data line
@@ -87,7 +88,7 @@ void rainbow(int pixels_per_second = 30) {
 }
 
 void explosion() {
-    strip.clear();
+    //strip.clear();
     // for(int i = 0; i < NUMLEDS; ++i) {
       // auto color = strip.ColorHSV(500, 200, 20);
       // strip.setPixelColor(i, color);
@@ -101,7 +102,7 @@ void explosion() {
   static uint32_t start_millis = 0;
   static int16_t hue;
   const int16_t max_radius_in_leds = 10;
-  const int16_t explosion_ms = 2000;
+  const int16_t explosion_ms = 1000;
 
 
   
@@ -112,7 +113,6 @@ void explosion() {
       hue = rand();
       return;
   } 
-  else 
   {
     uint32_t elapsed_ms = ms-start_millis;
     uint16_t radius_in_leds = (uint64_t) max_radius_in_leds * elapsed_ms / explosion_ms;
@@ -124,7 +124,7 @@ void explosion() {
         if( abs(distance - radius_in_leds)<2) {
           strip.setPixelColor(i,strip.ColorHSV(hue, 250, intensity));
         } else {
-          strip.setPixelColor(i,strip.ColorHSV(5000, 0, 0));
+          strip.setPixelColor(i,strip.Color(0, 0, 0));
         }
       }
     } else {
@@ -134,12 +134,51 @@ void explosion() {
 }
 
 
+
+constexpr int16_t degrees_to_hex(int32_t degrees) {
+  return (degrees % 360) * 0xffff/360;
+}
+
+
+void repeat(std::vector<uint32_t> colors) {
+  for(int i = 0; i < NUMLEDS; ++i) {
+    auto color = colors[i%colors.size()];
+    strip.setPixelColor(i, color);
+  }
+}
+
+void rgb() {
+  repeat({strip.Color(20,0,0), strip.Color(0,20,0), strip.Color(0,0,20)});
+}
+
+void trans() {
+  auto black = strip.Color(0,0,0);
+  auto  light_blue = strip.ColorHSV(degrees_to_hex(197), 50 * 0xff/100, 20);
+  auto  pink = strip.ColorHSV(degrees_to_hex(350), 30* 0xff/100, 20);
+  auto  white = strip.Color(20, 23, 20);
+
+  repeat({light_blue, light_blue, pink, pink, white, white, pink, pink, light_blue, light_blue, black, black});
+}
+
+void usa() {
+  auto  white = strip.Color(20, 23, 20);
+  auto red = strip.Color(20,0,0);
+  auto blue = strip.Color(0,0,20);
+  repeat({red, white, blue});
+};
+
+
 void loop() {
-  explosion();
+  //trans();
   //rainbow();
+  //usa();
   //pattern1();
+  //rgb();
+  //repeat({strip.Color(18,0,22)});// purple
+
+  explosion();
   strip.show();
-  delay(30);
+  delay(100);
  } // loop
 
  
