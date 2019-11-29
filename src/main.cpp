@@ -25,6 +25,10 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, PIN, NEO_RGB + NEO_KHZ400);
 // and minimize distance between Arduino and first pixel.  Avoid connecting
 // on a live circuit...if you must, connect GND first.
 
+struct Colors {
+    uint32_t black = strip.Color(0,0,0);
+} PresetColors;
+
 
 void setup() {
   // setup the LED strand
@@ -89,39 +93,27 @@ void rainbow(int pixels_per_second = 30) {
 
 void explosion() {
   uint32_t ms = millis();
-  static bool started = false;
-  static int16_t center_led;
+  static int16_t center_led=0;
   static uint32_t start_millis = 0;
-  static int16_t hue;
-  const int16_t max_radius_in_leds = 10;
-  const int16_t explosion_ms = 1000;
-
-
+  static int16_t hue=0;
+  int16_t max_radius_in_leds = 10;
+  int16_t explosion_ms = 1000;
   
-  if(!started) {
-      started = true;
+  uint32_t elapsed_ms = ms-start_millis;
+  if(elapsed_ms > explosion_ms) {
       center_led = rand() % NUMLEDS;
       start_millis = ms;
       hue = rand();
-      return;
+      max_radius_in_leds = 5 + rand()%10;
+      explosion_ms = 500 + rand()%1000;
   } 
-  {
-    uint32_t elapsed_ms = ms-start_millis;
-    uint16_t radius_in_leds = (uint64_t) max_radius_in_leds * elapsed_ms / explosion_ms;
-    int intensity = (uint64_t) 100 * (max_radius_in_leds - radius_in_leds) * (max_radius_in_leds - radius_in_leds) /  (max_radius_in_leds*max_radius_in_leds);
-    if(elapsed_ms < explosion_ms) {
-      for(int i = 0; i < NUMLEDS; ++i) {
+  uint16_t radius_in_leds = (uint64_t) max_radius_in_leds * elapsed_ms / explosion_ms;
+  int intensity = (uint64_t) 100 * (max_radius_in_leds - radius_in_leds) * (max_radius_in_leds - radius_in_leds) /  (max_radius_in_leds*max_radius_in_leds);
+  for(int i = 0; i < NUMLEDS; ++i) {
 
-        auto distance = abs(i-center_led);
-        if( abs(distance - radius_in_leds)<2) {
-          strip.setPixelColor(i,strip.ColorHSV(hue, 250, intensity));
-        } else {
-          strip.setPixelColor(i,strip.Color(0, 0, 0));
-        }
-      }
-    } else {
-      started = false;
-    }
+    auto distance = abs(i-center_led);
+    uint32_t color = abs(distance - radius_in_leds)<2 ? strip.ColorHSV(hue, 250, intensity) : PresetColors.black;
+    strip.setPixelColor(i, color);
   }
 }
 
@@ -162,17 +154,23 @@ void usa() {
 
 void loop() {
   //trans();
-  rainbow();
+  //rainbow();
   //usa();
   //pattern1();
   //rgb();
-  //repeat({strip.Color(18,0,22)});// purple
+  //repeat({strip.Color(18,0,22)});// purple 0.090A
   //repeat({strip.Color(20,10,0), strip.Color(25,16,0),strip.Color(14,5,2)});// orange/brown?
-  //repeat({strip.Color(20,0,0), strip.Color(0,20,0)});// red/green
+  //repeat({strip.Color(20,0,0), strip.Color(0,20,0)});// red/green 0.063A
+  //repeat({strip.Color(255,255,255)}); // bright white, 2.123A / 50LEDS
 
-  //explosion();
+  explosion();
+  delay(1); // for some reason, this gets rid of the spurious pixels being displayed on the string
+  portDISABLE_INTERRUPTS();
+  //auto state = portENTER_CRITICAL_NESTED();
   strip.show();
-  delay(20);
- } // loop
+  //portEXIT_CRITICAL_NESTED(state);
+  portENABLE_INTERRUPTS();
+  delay(29);
+ }
 
  
