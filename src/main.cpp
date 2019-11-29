@@ -5,6 +5,20 @@
 #endif
 #include <vector>
 
+// *********************************
+// ESP32 Digital LED Driver
+//
+#include "esp32_digital_led_lib.h"
+//#include "esp32_digital_led_funcs.h"
+strand_t STRANDS[] = {
+  {.rmtChannel = 2, .gpioNum = 15, .ledType = LED_WS2812B_V3, .brightLimit = 24, .numPixels =  50}
+};
+const int STRANDCNT = sizeof(STRANDS)/sizeof(STRANDS[0]);;
+strand_t * strands[8];
+
+// **********************************
+
+
 // Neopixel constants
 #define PIN 15        // Arduino pin for the LED strand data line
 #define NUMLEDS 50  // number of LEDs total
@@ -27,14 +41,25 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, PIN, NEO_RGB + NEO_KHZ400);
 
 struct Colors {
     uint32_t black = strip.Color(0,0,0);
+    uint32_t warm_white = strip.Color(8,5,2);
 } PresetColors;
 
 
 void setup() {
   // setup the LED strand
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
+  //strip.begin();
+  //strip.show(); // Initialize all pixels to 'off'
+  
+  digitalLeds_initDriver();
+  for (int i = 0; i < STRANDCNT; i++) {
+    gpioSetup(STRANDS[i].gpioNum, OUTPUT, LOW);
+    strands[i] = &STRANDS[i];
+  }
+  digitalLeds_addStrands(strands, STRANDCNT);
+
 } // setup
+
+
 
 
 void pattern1() {
@@ -105,7 +130,7 @@ void explosion() {
       start_millis = ms;
       hue = rand();
       max_radius_in_leds = 5 + rand()%10;
-      explosion_ms = 500 + rand()%1000;
+      explosion_ms = 1000 + rand()%1000;
   } 
   uint16_t radius_in_leds = (uint64_t) max_radius_in_leds * elapsed_ms / explosion_ms;
   int intensity = (uint64_t) 100 * (max_radius_in_leds - radius_in_leds) * (max_radius_in_leds - radius_in_leds) /  (max_radius_in_leds*max_radius_in_leds);
@@ -155,22 +180,34 @@ void usa() {
 void loop() {
   //trans();
   //rainbow();
-  //usa();
+  usa();
   //pattern1();
   //rgb();
+  //repeat({strip.Color(0,0,50)});
   //repeat({strip.Color(18,0,22)});// purple 0.090A
   //repeat({strip.Color(20,10,0), strip.Color(25,16,0),strip.Color(14,5,2)});// orange/brown?
   //repeat({strip.Color(20,0,0), strip.Color(0,20,0)});// red/green 0.063A
   //repeat({strip.Color(255,255,255)}); // bright white, 2.123A / 50LEDS
-
-  explosion();
-  delay(1); // for some reason, this gets rid of the spurious pixels being displayed on the string
-  portDISABLE_INTERRUPTS();
+  //explosion();
+  //delay(1); // for some reason, this gets rid of the spurious pixels being displayed on the string
+  //portDISABLE_INTERRUPTS();
   //auto state = portENTER_CRITICAL_NESTED();
-  strip.show();
+  //strip.show();
   //portEXIT_CRITICAL_NESTED(state);
-  portENABLE_INTERRUPTS();
-  delay(29);
+  //portENABLE_INTERRUPTS();
+
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    auto & p = strands[0]->pixels[i];
+    p.num = strip.getPixelColor(i);
+    std::swap(p.g,p.b);
+    std::swap(p.r,p.b);
+    
+  }
+
+  //randomStrands(strands, STRANDCNT, 3000, 30);
+  digitalLeds_drawPixels(strands, STRANDCNT);
+  delay(10);
+  
  }
 
  
