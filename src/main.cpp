@@ -39,11 +39,22 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, PIN, NEO_RGB + NEO_KHZ400);
 // and minimize distance between Arduino and first pixel.  Avoid connecting
 // on a live circuit...if you must, connect GND first.
 
-struct Colors {
+
+constexpr int16_t degrees_to_hex(int32_t degrees) {
+  return (degrees % 360) * 0xffff/360;
+}
+
+namespace Colors {
     uint32_t black = strip.Color(0,0,0);
     uint32_t warm_white = strip.Color(8,5,2);
-} PresetColors;
+    uint32_t light_blue = strip.ColorHSV(degrees_to_hex(197), 50 * 0xff/100, 20);
+    uint32_t pink = strip.ColorHSV(degrees_to_hex(350), 30* 0xff/100, 20);
+    uint32_t white = strip.Color(20, 23, 20);
+    uint32_t red = strip.Color(20,0,0);
+    uint32_t blue = strip.Color(0,0,20);
+};
 
+using namespace Colors;
 
 void setup() {
   // setup the LED strand
@@ -137,21 +148,14 @@ void explosion() {
   for(int i = 0; i < NUMLEDS; ++i) {
 
     auto distance = abs(i-center_led);
-    uint32_t color = abs(distance - radius_in_leds)<2 ? strip.ColorHSV(hue, 250, intensity) : PresetColors.black;
+    uint32_t color = abs(distance - radius_in_leds)<2 ? strip.ColorHSV(hue, 250, intensity) : black;
     strip.setPixelColor(i, color);
   }
 }
 
-
-
-constexpr int16_t degrees_to_hex(int32_t degrees) {
-  return (degrees % 360) * 0xffff/360;
-}
-
-
-void repeat(std::vector<uint32_t> colors) {
+void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
   for(int i = 0; i < NUMLEDS; ++i) {
-    auto color = colors[i%colors.size()];
+    auto color = colors[(i/repeat_count)%colors.size()];
     strip.setPixelColor(i, color);
   }
 }
@@ -161,26 +165,19 @@ void rgb() {
 }
 
 void trans() {
-  auto black = strip.Color(0,0,0);
-  auto  light_blue = strip.ColorHSV(degrees_to_hex(197), 50 * 0xff/100, 20);
-  auto  pink = strip.ColorHSV(degrees_to_hex(350), 30* 0xff/100, 20);
-  auto  white = strip.Color(20, 23, 20);
-
   repeat({light_blue, light_blue, pink, pink, white, white, pink, pink});
 }
 
 void usa() {
-  auto  white = strip.Color(20, 23, 20);
-  auto red = strip.Color(20,0,0);
-  auto blue = strip.Color(0,0,20);
-  repeat({red, white, blue});
+  repeat({red, white, blue},5);
 };
+
 
 
 void loop() {
   //trans();
   //rainbow();
-  usa();
+  //usa();
   //pattern1();
   //rgb();
   //repeat({strip.Color(0,0,50)});
@@ -188,13 +185,7 @@ void loop() {
   //repeat({strip.Color(20,10,0), strip.Color(25,16,0),strip.Color(14,5,2)});// orange/brown?
   //repeat({strip.Color(20,0,0), strip.Color(0,20,0)});// red/green 0.063A
   //repeat({strip.Color(255,255,255)}); // bright white, 2.123A / 50LEDS
-  //explosion();
-  //delay(1); // for some reason, this gets rid of the spurious pixels being displayed on the string
-  //portDISABLE_INTERRUPTS();
-  //auto state = portENTER_CRITICAL_NESTED();
-  //strip.show();
-  //portEXIT_CRITICAL_NESTED(state);
-  //portENABLE_INTERRUPTS();
+  explosion();
 
   for (uint16_t i = 0; i < strip.numPixels(); i++) {
     auto & p = strands[0]->pixels[i];
@@ -204,10 +195,9 @@ void loop() {
     
   }
 
-  //randomStrands(strands, STRANDCNT, 3000, 30);
   digitalLeds_drawPixels(strands, STRANDCNT);
-  delay(10);
-  
+  esp_sleep_enable_timer_wakeup(30000);
+  esp_light_sleep_start();
  }
 
  
