@@ -8,6 +8,24 @@
 #include <BluetoothSerial.h>
 #include <CmdParser.hpp>
 
+#include "SSD1306.h"
+#include "OLEDDisplay.h"
+
+
+// board at https://www.amazon.com/gp/product/B07DKD79Y9
+// oled
+const int oled_address=0x3c;
+const int pin_oled_sda = 4;
+const int pin_oled_sdl = 15;
+const int pin_oled_rst = 16;
+
+const int pin_strand_1 = 2;
+const int NUMLEDS = 100;
+
+String bluetooth_device_name = "bke";
+
+SSD1306 display(oled_address, pin_oled_sda, pin_oled_sdl);
+
 // globals
 const uint32_t bluetooth_buffer_reserve = 500;
 BluetoothSerial bluetooth;
@@ -18,7 +36,7 @@ BluetoothSerial bluetooth;
 #include "esp32_digital_led_lib.h"
 //#include "esp32_digital_led_funcs.h"
 strand_t STRANDS[] = {
-  {.rmtChannel = 2, .gpioNum = 15, .ledType = LED_WS2812B_V3, .brightLimit = 24, .numPixels =  50}
+  {.rmtChannel = 2, .gpioNum = pin_strand_1, .ledType = LED_WS2812B_V3, .brightLimit = 24, .numPixels =  NUMLEDS}
 };
 const int STRANDCNT = sizeof(STRANDS)/sizeof(STRANDS[0]);;
 strand_t * strands[8];
@@ -124,9 +142,6 @@ LightMode light_mode = mode_rainbow;
 
 
 
-// Neopixel constants
-#define PIN 15        // Arduino pin for the LED strand data line
-#define NUMLEDS 50  // number of LEDs total
 
 
 // Parameter 1 = number of pixels in strip
@@ -137,7 +152,7 @@ LightMode light_mode = mode_rainbow;
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, PIN, NEO_RGB + NEO_KHZ400);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, pin_strand_1, NEO_RGB + NEO_KHZ400);
 
 // IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
 // pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
@@ -236,6 +251,18 @@ Command * get_command_by_name(const char * command_name) {
 using namespace Colors;
 
 void setup() {
+
+  pinMode(pin_oled_rst, OUTPUT);
+  delay(100);
+
+  // set up oled
+  digitalWrite(pin_oled_rst, LOW);
+  delay(10);
+  digitalWrite(pin_oled_rst, HIGH);
+  delay(100);
+
+  // init display before mpu since it initializes shared i2c
+  display.init();  
   Serial.begin(921600);
   bluetooth.begin("bke");
   // 
@@ -389,6 +416,15 @@ void loop() {
     Serial.print("loop ");
     Serial.println(loop_ms);
   }
+
+  if(every_n_ms(last_loop_ms, loop_ms, 100)) {
+    display.clear();
+    display.drawString(0, 0, "bluetooth device: "  + bluetooth_device_name);
+    display.drawString(0,10,bluetooth.hasClient() ? "connected" : "disconnected");
+
+    //display.drawString(0, 10, "line2!");
+    display.display();
+  }
   
   static LineReader line_reader;
   static String last_bluetooth_line;
@@ -455,7 +491,6 @@ void loop() {
     std::swap(p.r,p.b);
     
   }
-
 
   digitalLeds_drawPixels(strands, STRANDCNT);
   
