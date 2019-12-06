@@ -20,7 +20,7 @@ const int pin_oled_sdl = 15;
 const int pin_oled_rst = 16;
 
 const int pin_strand_1 = 2;
-const int NUMLEDS = 100;
+int led_count = 500;
 
 String bluetooth_device_name = "bke";
 
@@ -36,7 +36,7 @@ BluetoothSerial bluetooth;
 #include "esp32_digital_led_lib.h"
 //#include "esp32_digital_led_funcs.h"
 strand_t STRANDS[] = {
-  {.rmtChannel = 2, .gpioNum = pin_strand_1, .ledType = LED_WS2812B_V3, .brightLimit = 24, .numPixels =  NUMLEDS}
+  {.rmtChannel = 2, .gpioNum = pin_strand_1, .ledType = LED_WS2812B_V3, .brightLimit = 24, .numPixels =  led_count}
 };
 const int STRANDCNT = sizeof(STRANDS)/sizeof(STRANDS[0]);;
 strand_t * strands[8];
@@ -152,7 +152,7 @@ LightMode light_mode = mode_rainbow;
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMLEDS, pin_strand_1, NEO_RGB + NEO_KHZ400);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(led_count, pin_strand_1, NEO_RGB + NEO_KHZ400);
 
 // IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
 // pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
@@ -207,15 +207,41 @@ void cmd_green(CommandEnvironment & env) {
 std::vector<uint32_t> current_colors = {strip.Color(15,15,15)};
 
 void cmd_color(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 3) {
+    env.cerr.printf("failed - requires three parameters");
+    return;
+  }
+
   light_mode = mode_color;
+  
   uint32_t color = strip.Color(atoi(env.args.getCmdParam(1)),atoi(env.args.getCmdParam(2)),atoi(env.args.getCmdParam(3)));
   current_colors = {color};
 }
 
 void cmd_add_color(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 3) {
+    env.cerr.printf("failed - requires three parameters");
+    return;
+  }
+
   light_mode = mode_color;
   uint32_t color = strip.Color(atoi(env.args.getCmdParam(1)),atoi(env.args.getCmdParam(2)),atoi(env.args.getCmdParam(3)));
   current_colors.push_back(color);
+}
+
+void cmd_set_led_count(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  auto v = atoi(env.args.getCmdParam(1));
+  if(v < 1) {
+    env.cerr.printf("failed - led_count must be one or more");
+    return;
+  }
+  led_count = v;
+  STRANDS[0].numPixels = led_count;
+  strip.updateLength(led_count);
 }
 
 
@@ -248,6 +274,7 @@ Command * get_command_by_name(const char * command_name) {
 }
 
 
+
 using namespace Colors;
 
 void setup() {
@@ -278,6 +305,9 @@ void setup() {
   commands.emplace_back(Command("color", cmd_color, "solid {red} {blue} {green}"));
   commands.emplace_back(Command("add", cmd_add_color, "adds a color to current pallet {red} {blue} {green}"));
 
+  commands.emplace_back(Command("ledcount", cmd_set_led_count, "sets the total number of leds on the strand"));
+
+  
   commands.emplace_back(Command{"next", cmd_next, "cycles to the next mode"});
   commands.emplace_back(Command{"previous", cmd_previous, "cycles to the previous mode"});
 
@@ -304,28 +334,28 @@ void pattern1() {
    auto ms = millis();
   //strip.clear();
   // step through the LEDS, and update the colors as needed
-  for (int i=0; i<NUMLEDS; i++) {
+  for (int i=0; i<led_count; i++) {
     int r=0,g=0,b=0;
     r+=8;g+=5;b+=2;
-    if((ms/1000)%NUMLEDS==i) {
+    if((ms/1000)%led_count==i) {
       r+=50;
       g+=50;
       b+=50;
     }
 
     
-    if((ms/20)%NUMLEDS ==i) {
+    if((ms/20)%led_count ==i) {
       r+=50;
       g+=50;
       b+=50;
     }
-    if((ms/30)%NUMLEDS ==i) {
+    if((ms/30)%led_count ==i) {
       r+=50;
     }
-    if((ms/40)%NUMLEDS ==i) {
+    if((ms/40)%led_count ==i) {
       g+=50;
     }
-    if((ms/35)%NUMLEDS ==NUMLEDS-i) {
+    if((ms/35)%led_count ==led_count-i) {
       r+=50;
       b+=50;
     }
@@ -339,10 +369,10 @@ void rainbow(int pixels_per_second = 30) {
 
   auto ms = millis();
 
-  uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / NUMLEDS;
-//  auto rand_light = rand() % NUMLEDS;
-  for(int i = 0; i < NUMLEDS; ++i) {
-    uint16_t hue = 2*i*(0xffff/NUMLEDS)+offset; // 0-0xffff
+  uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / led_count;
+//  auto rand_light = rand() % led_count;
+  for(int i = 0; i < led_count; ++i) {
+    uint16_t hue = 2*i*(0xffff/led_count)+offset; // 0-0xffff
     uint8_t saturation = 200;
     uint8_t value = 20;
     // if(i==rand_light) {
@@ -368,7 +398,7 @@ void explosion() {
   
   uint32_t elapsed_ms = ms-start_millis;
   if(elapsed_ms > explosion_ms) {
-      center_led = rand() % NUMLEDS;
+      center_led = rand() % led_count;
       start_millis = ms;
       hue = rand();
       max_radius_in_leds = 5 + rand()%10;
@@ -376,7 +406,7 @@ void explosion() {
   } 
   uint16_t radius_in_leds = (uint64_t) max_radius_in_leds * elapsed_ms / explosion_ms;
   int intensity = (uint64_t) 100 * (max_radius_in_leds - radius_in_leds) * (max_radius_in_leds - radius_in_leds) /  (max_radius_in_leds*max_radius_in_leds);
-  for(int i = 0; i < NUMLEDS; ++i) {
+  for(int i = 0; i < led_count; ++i) {
 
     auto distance = abs(i-center_led);
     uint32_t color = abs(distance - radius_in_leds)<2 ? strip.ColorHSV(hue, 250, intensity) : black;
@@ -385,7 +415,7 @@ void explosion() {
 }
 
 void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
-  for(int i = 0; i < NUMLEDS; ++i) {
+  for(int i = 0; i < led_count; ++i) {
     auto color = colors[(i/repeat_count)%colors.size()];
     strip.setPixelColor(i, color);
   }
