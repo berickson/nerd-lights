@@ -5,6 +5,9 @@
 #endif
 #include <vector>
 
+#include "Preferences.h" // save preferences to non-volatile memory
+
+
 #include <BluetoothSerial.h>
 #include <CmdParser.hpp>
 
@@ -29,6 +32,8 @@ SSD1306 display(oled_address, pin_oled_sda, pin_oled_sdl);
 // globals
 const uint32_t bluetooth_buffer_reserve = 500;
 BluetoothSerial bluetooth;
+Preferences preferences;
+
 
 // *********************************
 // ESP32 Digital LED Driver
@@ -136,14 +141,6 @@ enum LightMode {
 
 LightMode light_mode = mode_rainbow;
 
-
-
-
-
-
-
-
-
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
 // Parameter 3 = pixel type flags, add together as needed:
@@ -174,33 +171,40 @@ namespace Colors {
     uint32_t blue = strip.Color(0,0,20);
 };
 
+void set_light_mode(LightMode mode) {
+  light_mode = mode;
+  preferences.begin("main");
+  preferences.putInt("light_mode", (int) light_mode);
+  preferences.end();
+}
+
 
 void cmd_rgb(CommandEnvironment & env) {
-  light_mode = mode_rgb;
+  set_light_mode(mode_rgb);
 }
 
 void cmd_usa(CommandEnvironment & env) {
-  light_mode = mode_usa;
+  set_light_mode(mode_usa);
 }
 
 void cmd_explosion(CommandEnvironment & env) {
-  light_mode = mode_explosion;
+  set_light_mode(mode_explosion);
 }
 
 void cmd_pattern1(CommandEnvironment & env) {
-  light_mode = mode_pattern1;
+  set_light_mode(mode_pattern1);
 }
 
 void cmd_rainbow(CommandEnvironment & env) {
-  light_mode = mode_rainbow;
+  set_light_mode(mode_rainbow);
 }
 
 void cmd_off(CommandEnvironment & env) {
-  light_mode = mode_off;
+  set_light_mode(mode_off);
 }
 
 void cmd_green(CommandEnvironment & env) {
-  light_mode = mode_green;
+  set_light_mode(mode_green);
 }
 
 
@@ -212,10 +216,11 @@ void cmd_color(CommandEnvironment & env) {
     return;
   }
 
-  light_mode = mode_color;
   
   uint32_t color = strip.Color(atoi(env.args.getCmdParam(1)),atoi(env.args.getCmdParam(2)),atoi(env.args.getCmdParam(3)));
   current_colors = {color};
+  set_light_mode(mode_color);
+
 }
 
 void cmd_add_color(CommandEnvironment & env) {
@@ -247,19 +252,16 @@ void cmd_set_led_count(CommandEnvironment & env) {
 
 
 void cmd_next(CommandEnvironment & env) {
-  light_mode = (LightMode) (light_mode + 1);
-  if(light_mode > mode_off) {
-    light_mode = (LightMode) 0;
+  LightMode mode = (LightMode) (light_mode + 1);
+  if(mode > mode_off) {
+    mode = (LightMode) 0;
   }
+  set_light_mode(mode);
 }
 
 void cmd_previous(CommandEnvironment & env) {
-  if(light_mode==0) {
-    light_mode = mode_off;
-  } else {
-    light_mode = (LightMode)(light_mode - 1);
-  }
-
+  LightMode mode = (light_mode==0) ? light_mode = mode_off : (LightMode)(light_mode - 1);
+  set_light_mode(mode);
 }
 
 
@@ -278,6 +280,10 @@ Command * get_command_by_name(const char * command_name) {
 using namespace Colors;
 
 void setup() {
+  // read preferences
+  preferences.begin("main");
+  light_mode = (LightMode) preferences.getInt("light_mode", mode_rainbow);
+  preferences.end();
 
   pinMode(pin_oled_rst, OUTPUT);
   delay(100);
