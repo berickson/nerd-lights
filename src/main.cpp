@@ -34,6 +34,9 @@ const uint32_t bluetooth_buffer_reserve = 500;
 BluetoothSerial bluetooth;
 Preferences preferences;
 
+float speed = 1.0;
+float cycles = 1.0;
+
 
 // *********************************
 // ESP32 Digital LED Driver
@@ -140,6 +143,8 @@ enum LightMode {
 };
 
 LightMode light_mode = mode_rainbow;
+uint8_t saturation = 200;
+uint8_t brightness = 50;
 
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
@@ -171,6 +176,30 @@ namespace Colors {
     uint32_t blue = strip.Color(0,0,20);
 };
 
+void cmd_name(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 1) {
+    env.cout.printf("Failed - requires a single parameter for name");
+    return;
+  }
+  String name = env.args.getCmdParam(1);
+  /*
+  for(int i = 0; i < name.length; ++i) {
+    if(name[i] < 'a' || name[i] < 'z') {
+      env.cout.printf("Failed - bluetooth device name must be all lowercase letters");
+      return;
+    }
+  }
+  */
+  if(name.length() > 32) {
+    env.cout.printf("Failed - bluetooth device name must be 32 or fewer characters");
+    return;
+  }
+  preferences.begin("main");
+  preferences.putString("bt_name", name);
+  preferences.end();
+  esp_restart();
+}
+
 void set_light_mode(LightMode mode) {
   light_mode = mode;
   preferences.begin("main");
@@ -178,6 +207,20 @@ void set_light_mode(LightMode mode) {
   preferences.end();
 }
 
+void set_brightness(uint8_t new_brightness) {
+  brightness = new_brightness;
+  preferences.begin("main");
+  preferences.putInt("brightness", new_brightness);
+  preferences.end();
+
+}
+
+void set_saturation(uint8_t new_saturation) {
+  saturation = new_saturation;
+  preferences.begin("main");
+  preferences.putInt("saturation", saturation);
+  preferences.end();
+}
 
 void cmd_rgb(CommandEnvironment & env) {
   set_light_mode(mode_rgb);
@@ -220,8 +263,75 @@ void cmd_color(CommandEnvironment & env) {
   uint32_t color = strip.Color(atoi(env.args.getCmdParam(1)),atoi(env.args.getCmdParam(2)),atoi(env.args.getCmdParam(3)));
   current_colors = {color};
   set_light_mode(mode_color);
-
 }
+
+void cmd_brightness(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  int new_brightess = atoi(env.args.getCmdParam(1));
+  if(new_brightess < 1 || new_brightess > 255) {
+    env.cerr.printf("failed - brightness must be between 1 and 255");
+    return;
+  }
+  set_brightness(new_brightess);
+}
+
+void cmd_cycles(CommandEnvironment & env) {
+  if(env.args.getParamCount() > 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  if(env.args.getParamCount() == 1) {
+    auto new_cycles = atof(env.args.getCmdParam(1));
+    if(! (new_cycles > 0.01 && new_cycles < 1000) ) {
+      env.cerr.printf("failed - cycles should be between 0.01 and 1000");
+      return;
+    }
+    cycles = new_cycles;
+    preferences.begin("main");
+    preferences.putFloat("cycles", cycles);
+    preferences.end();
+  }
+  env.cout.print("cycles = ");
+  env.cout.println(cycles);
+}
+
+void cmd_speed(CommandEnvironment & env) {
+  if(env.args.getParamCount() > 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  if(env.args.getParamCount() == 1) {
+    auto new_speed = atof(env.args.getCmdParam(1));
+    if(! (fabs(new_speed) < 10) ) {
+      env.cerr.printf("failed - cycles should be less than 10");
+      return;
+    }
+    speed = new_speed;
+    preferences.begin("main");
+    preferences.putFloat("speed", speed);
+    preferences.end();
+  }
+  env.cout.print("speed = ");
+  env.cout.println(speed);  
+}
+
+void cmd_saturation(CommandEnvironment & env) {
+  if(env.args.getParamCount() != 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  int new_saturation = atoi(env.args.getCmdParam(1));
+  if(new_saturation < 0 || new_saturation > 255) {
+    env.cerr.printf("failed - saturation must be between 0 and 255");
+    return;
+  }
+  set_saturation(new_saturation);
+}
+
+
 
 void cmd_add_color(CommandEnvironment & env) {
   if(env.args.getParamCount() != 3) {
@@ -235,18 +345,25 @@ void cmd_add_color(CommandEnvironment & env) {
 }
 
 void cmd_set_led_count(CommandEnvironment & env) {
-  if(env.args.getParamCount() != 1) {
+  if(env.args.getParamCount() > 1) {
     env.cerr.printf("failed - requires one parameter");
     return;
   }
-  auto v = atoi(env.args.getCmdParam(1));
-  if(v < 1) {
-    env.cerr.printf("failed - led_count must be one or more");
-    return;
+  if(env.args.getParamCount() == 1) {
+    auto v = atoi(env.args.getCmdParam(1));
+    if(v < 1) {
+      env.cerr.printf("failed - led_count must be one or more");
+      return;
+    }
+    led_count = v;
+    preferences.begin("main");
+    preferences.putInt("led_count", led_count);
+    preferences.end();
+    STRANDS[0].numPixels = led_count;
+    strip.updateLength(led_count);
   }
-  led_count = v;
-  STRANDS[0].numPixels = led_count;
-  strip.updateLength(led_count);
+  env.cout.print("ledcount = ");
+  env.cout.println(led_count);  
 }
 
 
@@ -282,7 +399,14 @@ using namespace Colors;
 void setup() {
   // read preferences
   preferences.begin("main");
+  led_count = preferences.getInt("led_count", 50);
   light_mode = (LightMode) preferences.getInt("light_mode", mode_rainbow);
+  saturation = preferences.getInt("saturation", 200);
+  brightness = preferences.getInt("brightness", 30);
+  speed = preferences.getFloat("speed", 1.0);
+  cycles = preferences.getFloat("cycles", 1.0);
+  bluetooth_device_name = preferences.getString("bt_name", "ledlights");
+
   preferences.end();
 
   pinMode(pin_oled_rst, OUTPUT);
@@ -297,7 +421,7 @@ void setup() {
   // init display before mpu since it initializes shared i2c
   display.init();  
   Serial.begin(921600);
-  bluetooth.begin("bke");
+  bluetooth.begin(bluetooth_device_name);
   // 
   // set up command interfaces
   commands.reserve(50);
@@ -307,6 +431,14 @@ void setup() {
   commands.emplace_back(Command{"explosion", cmd_explosion, "colored explosions"});
   commands.emplace_back(Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
+  commands.emplace_back(Command{"saturation", cmd_saturation, "set saturation 0-255 for rainbow effect"});
+  commands.emplace_back(Command{"brightness", cmd_brightness, "set brightness 1-255 for rainbow effect"});
+  commands.emplace_back(Command{"name", cmd_name, "set bluetooth device name"});
+  commands.emplace_back(Command{"cycles", cmd_cycles, "the number of times the current pattern will fit on the light strand, if less than one, it will only fit part of the pattern"});
+  commands.emplace_back(Command{"speed", cmd_speed, "speed of effect,  1.0 would mean moving entire strip once per second, 2.0 would do it twice per second"});
+ 
+
+
   commands.emplace_back(Command{"green", cmd_green, "solid green color"});
   commands.emplace_back(Command("color", cmd_color, "solid {red} {blue} {green}"));
   commands.emplace_back(Command("add", cmd_add_color, "adds a color to current pallet {red} {blue} {green}"));
@@ -371,20 +503,19 @@ void pattern1() {
 }
 
 
-void rainbow(int pixels_per_second = 30) {
+void rainbow() {
 
+  // uses speed and cycles
   auto ms = millis();
 
-  uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / led_count;
+  float offset = -1.0 * speed * ms/ 1000. * led_count;
+
+  // uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / led_count;
 //  auto rand_light = rand() % led_count;
+  float ratio = cycles / led_count * 0xffff;
   for(int i = 0; i < led_count; ++i) {
-    uint16_t hue = 2*i*(0xffff/led_count)+offset; // 0-0xffff
-    uint8_t saturation = 200;
-    uint8_t value = 20;
-    // if(i==rand_light) {
-    //   value = 100;
-    // }
-    auto color = strip.ColorHSV(hue, saturation, value);
+    uint16_t hue = (i + offset) * ratio; // 0-0xffff
+    auto color = strip.ColorHSV(hue, saturation, brightness);
     strip.setPixelColor(i, color);
   }
   strip.show();
@@ -455,7 +586,7 @@ void loop() {
 
   if(every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
-    display.drawString(0, 0, "bluetooth device: "  + bluetooth_device_name);
+    display.drawString(0, 0, "bluetooth: "  + bluetooth_device_name);
     display.drawString(0,10,bluetooth.hasClient() ? "connected" : "disconnected");
 
     //display.drawString(0, 10, "line2!");
