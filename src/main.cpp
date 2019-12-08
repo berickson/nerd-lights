@@ -21,6 +21,8 @@
 // https://github.com/me-no-dev/ESPAsyncWebServer
 #include "ESPAsyncWebServer.h"
 
+#include <chrono>
+
 // board at https://www.amazon.com/gp/product/B07DKD79Y9
 // oled
 const int oled_address = 0x3c;
@@ -246,6 +248,19 @@ class WifiTask {
 
 WifiTask wifi_task;
 
+
+////////////////////////////////////////////
+// helpers
+////////////////////////////////////////////
+uint32_t clock_millis() {
+  //return millis();
+    auto start = std::chrono::system_clock::now();
+    auto since_epoch = start.time_since_epoch();
+    uint32_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(since_epoch).count();
+    return ms;// millis();
+}
+
+
 ////////////////////////////////
 // define commands
 ////////////////////////////////
@@ -382,16 +397,22 @@ void cmd_color(CommandEnvironment &env) {
 }
 
 void cmd_brightness(CommandEnvironment &env) {
-  if (env.args.getParamCount() != 1) {
+  env.cout.print("current brighness: ");
+  env.cout.println(brightness);
+  if (env.args.getParamCount() > 1) {
     env.cerr.printf("failed - requires one parameter");
     return;
   }
-  int new_brightess = atoi(env.args.getCmdParam(1));
-  if (new_brightess < 1 || new_brightess > 255) {
-    env.cerr.printf("failed - brightness must be between 1 and 255");
-    return;
+  if(env.args.getParamCount() == 1) {
+    int new_brightess = atoi(env.args.getCmdParam(1));
+    if (new_brightess < 1 || new_brightess > 255) {
+      env.cerr.printf("failed - brightness must be between 1 and 255");
+      return;
+    }
+    set_brightness(new_brightess);
+    env.cout.print("new brighness: ");
+    env.cout.println(brightness);
   }
-  set_brightness(new_brightess);
 }
 
 void cmd_cycles(CommandEnvironment &env) {
@@ -676,7 +697,7 @@ void setup() {
 }  // setup
 
 void pattern1() {
-  auto ms = millis();
+  auto ms = clock_millis();
   // strip.clear();
   // step through the LEDS, and update the colors as needed
   for (int i = 0; i < led_count; i++) {
@@ -712,15 +733,15 @@ void pattern1() {
 
 void rainbow() {
   // uses speed and cycles
-  auto ms = millis();
+  auto ms = clock_millis();
 
-  float offset = -1.0 * speed * ms / 1000. * led_count;
+  double offset = -1.0 * speed * ms / 1000. * led_count;
 
   // uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / led_count;
   //  auto rand_light = rand() % led_count;
-  float ratio = cycles / led_count * 0xffff;
+  double ratio = cycles / led_count * 0xffff;
   for (int i = 0; i < led_count; ++i) {
-    uint16_t hue = fmodl((i + offset) * ratio, 0xffff);  // 0-0xffff
+    uint16_t hue = fmod((i + offset) * ratio, 0xffff);  // 0-0xffff
     auto color = strip.ColorHSV(hue, saturation, brightness);
     strip.setPixelColor(i, color);
   }
@@ -730,7 +751,7 @@ void rainbow() {
 void off() { strip.clear(); }
 
 void explosion() {
-  uint32_t ms = millis();
+  uint32_t ms = clock_millis();
   static int16_t center_led = 0;
   static uint32_t start_millis = 0;
   static int16_t hue = 0;
@@ -783,7 +804,7 @@ bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms,
 
 void loop() {
   static unsigned long last_loop_ms = 0;
-  unsigned long loop_ms = millis();
+  unsigned long loop_ms = clock_millis();
 
   if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
     Serial.print("loop ");
@@ -811,6 +832,8 @@ void loop() {
       sprintf(buff, "%d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
       display.drawString(0, 40, buff);
     }
+
+    display.drawString(0,50,String(clock_millis()));
 
     display.display();
   }
