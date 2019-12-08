@@ -196,6 +196,7 @@ class WifiTask {
       case status_not_connected:
         connect_start_ms = ms;
         WiFi.mode(WIFI_STA);
+        WiFi.setHostname(bluetooth_device_name.c_str());
         esp_wifi_set_ps(WIFI_PS_NONE);
         WiFi.begin(ssid.c_str(), password.c_str());
         current_state = status_connecting;
@@ -532,8 +533,8 @@ using namespace Colors;
 
 // feeds variables to html
 String get_variable_value(const String& var) {
-  if(var == "LED_STATE_NAME"){
-    return "not supported";
+  if(var == "name"){
+    return bluetooth_device_name;
   }
 
   return String();

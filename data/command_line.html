@@ -48,7 +48,8 @@
 </head>
 
 <body>
-  <h1>Command Line</h1>
+  <h1>Command Line for %name%</h1>
+  
   <div class='results_box'>
     <div class='results'></div>
   </div>
@@ -78,10 +79,15 @@
       var results_box = $('.results_box')[0]
       var results = $('.results')[0]
       var command = $('.command');
-      var line_div = $('<div>');
-      var time_div = $('<div>').addClass('time_text').text(time_string());
-      var command_div = $('<div>').addClass('command_text').text(command.val())
-      line_div.append(time_div).append(command_div);
+      var line_div = document.createElement('div');
+      var time_div = document.createElement('div');
+      time_div.classList.add('time_text');
+      time_div.innerText = time_string();
+      var command_div = document.createElement('div');
+      command_div.classList.add('command_text');
+      command_div.innerText = command.val();
+      line_div.append(time_div);
+      line_div.append(command_div);
       results.append(line_div);
       results.scrollTop = results.scrollHeight;
       results_box.scrollTop = results_box.scrollHeight; // scroll to bottom
@@ -92,10 +98,15 @@
         data: command.val(),
 
       }).done(function (msg) {
-        line_div = $('<div>');
-        time_div = $('<div>').addClass('time_text').text(time_string());
-        var result_div = $('<div>').addClass('result_text').text(msg)
-        line_div.append(time_div).append(result_div);
+        line_div = document.createElement('div');
+        time_div = document.createElement('div');
+        time_div.classList.add('time_text');
+        time_div.innerText = time_string();
+        var result_div = document.createElement('div');
+        result_div.classList.add('result_text');
+        result_div.innerText = msg;
+        line_div.append(time_div);
+        line_div.append(result_div);
         results.append(line_div);
         results.scrollTop = results.scrollHeight;
         results_box.scrollTop = results_box.scrollHeight; // scroll to bottom
