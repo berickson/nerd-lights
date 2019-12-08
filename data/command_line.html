@@ -1,0 +1,113 @@
+<!doctype html>
+
+<html>
+<style>
+  * { box-sizing: border-box; }
+
+  .results_box {
+    font-family: "Lucida Console", Monaco, monospace;
+    font-size: 9pt;
+    position: relative;
+    height: 480px;
+    overflow-y:auto;
+  
+    background-color: rgb(30, 30, 30);
+  }
+
+  .results {
+    position: absolute;
+    bottom: 0;
+    max-height: 100%;
+    width: 100%;
+    display:contents;
+  }
+
+  .time_text {
+    color: white;
+    display: inline;
+    padding-right: 1em;
+  }
+
+  .command_text {
+    color: rgb(205, 237, 248);
+    display: inline;
+  }
+
+  .result_text {
+    color: lime;
+    display:inline-block;
+    vertical-align: top;
+    white-space: pre-line;
+    
+  }
+</style>
+
+<head>
+  <script src="https://code.jquery.com/jquery-3.4.1.min.js"
+    integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+</head>
+
+<body>
+  <h1>Command Line</h1>
+  <div class='results_box'>
+    <div class='results'></div>
+  </div>
+
+
+  <div><input class='command'></input><button onclick='go()'>Go</button><input type="checkbox" id="keep_input" checked/>keep input</div>
+  <script>
+
+    function time_string() {
+      d = new Date();
+      return d.getHours().toString().padStart(2, '0')
+        + ":" + d.getMinutes().toString().padStart(2, '0')
+        + ":" + d.getSeconds().toString().padStart(2, '0')
+        + "." + d.getMilliseconds().toString().padStart(3, '0');
+    }
+
+    // capture enter key
+    $('.command').bind("keyup", function (event) {
+      if (event.keyCode === 13) {
+        event.preventDefault();
+        go();
+      }
+    });
+
+
+    function go() {
+      var results_box = $('.results_box')[0]
+      var results = $('.results')[0]
+      var command = $('.command');
+      var line_div = $('<div>');
+      var time_div = $('<div>').addClass('time_text').text(time_string());
+      var command_div = $('<div>').addClass('command_text').text(command.val())
+      line_div.append(time_div).append(command_div);
+      results.append(line_div);
+      results.scrollTop = results.scrollHeight;
+      results_box.scrollTop = results_box.scrollHeight; // scroll to bottom
+
+      $.ajax({
+        method: "POST",
+        url: 'command',
+        data: command.val(),
+
+      }).done(function (msg) {
+        line_div = $('<div>');
+        time_div = $('<div>').addClass('time_text').text(time_string());
+        var result_div = $('<div>').addClass('result_text').text(msg)
+        line_div.append(time_div).append(result_div);
+        results.append(line_div);
+        results.scrollTop = results.scrollHeight;
+        results_box.scrollTop = results_box.scrollHeight; // scroll to bottom
+      });
+
+
+      if(!$("#keep_input").is(':checked')) {
+        command.val('');
+      }
+    }
+  </script>
+
+</body>
+
+</html>
