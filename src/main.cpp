@@ -17,6 +17,7 @@
 #include "SPIFFS.h"
 #include "WiFi.h"
 #include "esp_wifi.h"
+#include "time.h"
 // https://github.com/me-no-dev/ESPAsyncWebServer
 #include "ESPAsyncWebServer.h"
 
@@ -210,6 +211,7 @@ class WifiTask {
           break;
         }
         if (wifi_status == WL_CONNECTED) {
+          configTime(0, 0, "pool.ntp.org");
           server.begin();
           current_state = status_awaiting_client;
           if (trace) Serial.print("wifi connected, web server started");
@@ -799,9 +801,17 @@ void loop() {
                        bluetooth.hasClient() ? "connected" : "disconnected");
       display.drawString(0, 20, (String) "SSID: " + wifi_task.ssid);
       display.drawString(0, 30, WiFi.localIP().toString());
+      
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+      display.drawString(0,40,"Failed to obtain time");
+    } else {
+      
+      char buff[80];
+      sprintf(buff, "%d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+      display.drawString(0, 40, buff);
+    }
 
-
-    // display.drawString(0, 10, "line2!");
     display.display();
   }
 
