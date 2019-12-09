@@ -1,8 +1,42 @@
 <html>
     <head>
+        <title>%device_name%</title>
+        <style>
+body {
+    font-size: 36px;
+}
+
+button {
+background-color: #888888; /* gray */
+border: none;
+color: white;
+padding: 15px 32px;
+text-align: center;
+text-decoration: none;
+display: inline-block;
+font-size: 36px;
+}
+        </style>
     </head>
     <body>
-        This is index.html from rgb_lights<br>
+        <script>
+            function power_on() {
+                let r = new XMLHttpRequest();
+                r.open("POST", "command");
+                r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+                r.send("on");
+            }
+
+            function power_off() {
+                let r = new XMLHttpRequest();
+                r.open("POST", "command");
+                r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+                r.send("off");
+            }
+        </script>
+
+        <h1>%device_name%</h1>
+        <button onclick="power_on()">on</button> <button onclick="power_off()">off</button><br>
         <a href='command_line.html'>command_line.html</a>
     </body>
 </html>

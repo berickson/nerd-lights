@@ -41,6 +41,8 @@ SSD1306 display(oled_address, pin_oled_sda, pin_oled_sdl);
 const uint32_t bluetooth_buffer_reserve = 500;
 BluetoothSerial bluetooth;
 Preferences preferences;
+bool lights_on = true; // true if lights are currently turned on
+
 
 float speed = 1.0;
 float cycles = 1.0;
@@ -213,7 +215,7 @@ class WifiTask {
           break;
         }
         if (wifi_status == WL_CONNECTED) {
-          configTime(0, 0, "pool.ntp.org");
+          configTime(-8*60*60, -7*60*60, "pool.ntp.org");
           server.begin();
           current_state = status_awaiting_client;
           if (trace) Serial.print("wifi connected, web server started");
@@ -276,6 +278,20 @@ void cmd_help(CommandEnvironment &env) {
   }
 }
 
+void cmd_status(CommandEnvironment & env) {
+  env.cout.print("Device name: ");
+  env.cout.println(bluetooth_device_name);
+  env.cout.print("The lights are: ");
+  env.cout.println(lights_on ? "ON" : "OFF");
+  env.cout.println("SSID: "+ wifi_task.ssid);
+  env.cout.println("IP Address: " + WiFi.localIP().toString());
+  env.cout.print("Bluetooth status: ");
+  env.cout.println(bluetooth.hasClient() ? "connected" : "disconnected");
+
+}
+
+
+// current lighting pattern selected for display
 enum LightMode {
   mode_rgb,
   mode_usa,
@@ -284,7 +300,7 @@ enum LightMode {
   mode_rainbow,
   mode_green,
   mode_color,
-  mode_off  // mode off must always be last
+  mode_last = mode_color
 };
 
 LightMode light_mode = mode_rainbow;
@@ -347,6 +363,7 @@ void cmd_name(CommandEnvironment &env) {
 }
 
 void set_light_mode(LightMode mode) {
+  lights_on = true;
   light_mode = mode;
   preferences.begin("main");
   preferences.putInt("light_mode", (int)light_mode);
@@ -377,7 +394,8 @@ void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
 
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 
-void cmd_off(CommandEnvironment &env) { set_light_mode(mode_off); }
+void cmd_off(CommandEnvironment &env) { lights_on = false; }
+void cmd_on(CommandEnvironment &env) { lights_on = true; }
 
 void cmd_green(CommandEnvironment &env) { set_light_mode(mode_green); }
 
@@ -531,7 +549,7 @@ void cmd_set_enable_wifi(CommandEnvironment &env) {
 
 void cmd_next(CommandEnvironment &env) {
   LightMode mode = (LightMode)(light_mode + 1);
-  if (mode > mode_off) {
+  if (mode > mode_last) {
     mode = (LightMode)0;
   }
   set_light_mode(mode);
@@ -539,7 +557,7 @@ void cmd_next(CommandEnvironment &env) {
 
 void cmd_previous(CommandEnvironment &env) {
   LightMode mode =
-      (light_mode == 0) ? light_mode = mode_off : (LightMode)(light_mode - 1);
+      (light_mode == 0) ? light_mode = mode_last : (LightMode)(light_mode - 1);
   set_light_mode(mode);
 }
 
@@ -556,7 +574,7 @@ using namespace Colors;
 
 // feeds variables to html
 String get_variable_value(const String& var) {
-  if(var == "name"){
+  if(var == "device_name"){
     return bluetooth_device_name;
   }
 
@@ -601,6 +619,8 @@ void setup() {
   commands.emplace_back(
       Command{"help", cmd_help, "displays list of available commands"});
   commands.emplace_back(
+      Command{"status", cmd_status, "displays current device status information"});
+  commands.emplace_back(
       Command{"wifi", cmd_set_wifi_config, "set wifi, {ssid} {password}"});
   commands.emplace_back(Command{"enablewifi", cmd_set_enable_wifi, "on/off"});
   commands.emplace_back(Command{"usa", cmd_usa, "red white and blue"});
@@ -635,7 +655,9 @@ void setup() {
   commands.emplace_back(
       Command{"previous", cmd_previous, "cycles to the previous mode"});
   commands.emplace_back(
-      Command{"off", cmd_off, "lights turn off, device is still running"});
+      Command{"off", cmd_off, "turn lights off, device is still running"});
+  commands.emplace_back(
+      Command{"on", cmd_on, "turn lights on"});
 
   // setup the LED strand
   // strip.begin();
@@ -856,32 +878,32 @@ void loop() {
     last_bluetooth_line = line_reader.line;
   }
 
-  switch (light_mode) {
-    case mode_usa:
-      usa();
-      break;
-    case mode_rainbow:
-      rainbow();
-      break;
-    case mode_rgb:
-      rgb();
-      break;
-    case mode_green:
-      repeat({strip.Color(0, 50, 0)});
-      break;
-    case mode_explosion:
-      explosion();
-      break;
-    case mode_pattern1:
-      pattern1();
-      break;
-    case mode_color:
-      repeat(current_colors);
-      break;
-
-    case mode_off:
-      off();
-      break;
+  if(lights_on) {
+    switch (light_mode) {
+      case mode_usa:
+        usa();
+        break;
+      case mode_rainbow:
+        rainbow();
+        break;
+      case mode_rgb:
+        rgb();
+        break;
+      case mode_green:
+        repeat({strip.Color(0, 50, 0)});
+        break;
+      case mode_explosion:
+        explosion();
+        break;
+      case mode_pattern1:
+        pattern1();
+        break;
+      case mode_color:
+        repeat(current_colors);
+        break;
+    }
+  } else {
+    off();
   }
 
   // trans();
@@ -906,7 +928,7 @@ void loop() {
 
   digitalLeds_drawPixels(strands, STRANDCNT);
 
-  delay(light_mode == mode_off ? 2000 : 20);
+  delay(lights_on ? 20 : 200);
   // esp_sleep_enable_timer_wakeup(30000);
   // esp_light_sleep_start();
   last_loop_ms = loop_ms;
