@@ -1,0 +1,40 @@
+<html>
+    <head>
+        <title>%device_name% - Upgrade</title>
+        <script>
+                function updateSize() {
+                  let nBytes = 0,
+                      oFiles = document.getElementById("uploadInput").files,
+                      nFiles = oFiles.length;
+                  for (let nFileId = 0; nFileId < nFiles; nFileId++) {
+                    nBytes += oFiles[nFileId].size;
+                  }
+                  let sOutput = nBytes + " bytes";
+                  // optional code for multiples approximation
+                  for (let aMultiples = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"], nMultiple = 0, nApprox = nBytes / 1024; nApprox > 1; nApprox /= 1024, nMultiple++) {
+                    sOutput = nApprox.toFixed(3) + " " + aMultiples[nMultiple] + " (" + nBytes + " bytes)";
+                  }
+                  // end of optional code
+                  document.getElementById("fileNum").innerHTML = nFiles;
+                  document.getElementById("fileSize").innerHTML = sOutput;
+                }
+                </script>   
+    </head>
+    <body>
+        Select file to upload: <input type="file" id="input">
+    </body>
+    <button>Upgrade</button>
+
+            <form name="uploadForm" action='do_upgrade' method = "POST">
+            <p><input id="uploadInput" type="file" name="myFiles" onchange="updateSize();" multiple> selected files: <span id="fileNum">0</span>; total size: <span id="fileSize">0</span></p>
+            <p><input type="submit" value="Send file"></p>
+            </form>
+
+            <div class = "upload">
+                    <form method = "POST" action = "/do_upgrade" enctype="multipart/form-data">
+                        <input type="file" name="data"/>
+                        <input type="submit" name="upload" value="Upload" title = "Upload Files">
+                    </form>	
+                </div>
+    
+</html>
