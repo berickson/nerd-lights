@@ -258,8 +258,8 @@ uint32_t clock_millis() {
   //return millis();
     auto start = std::chrono::system_clock::now();
     auto since_epoch = start.time_since_epoch();
-    uint32_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(since_epoch).count();
-    return ms;// millis();
+    uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(since_epoch).count();
+    return ms & 0xffffffff;// millis();
 }
 
 
@@ -299,6 +299,7 @@ enum LightMode {
   mode_pattern1,
   mode_rainbow,
   mode_green,
+  mode_strobe,
   mode_color,
   mode_last = mode_color
 };
@@ -393,6 +394,7 @@ void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
 
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
+void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
@@ -630,6 +632,7 @@ void setup() {
   commands.emplace_back(
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
+  commands.emplace_back(Command{"strobe", cmd_strobe, "flashes whole strand at once"});
   commands.emplace_back(Command{"saturation", cmd_saturation,
                                 "set saturation 0-255 for rainbow effect"});
   commands.emplace_back(Command{"brightness", cmd_brightness,
@@ -767,7 +770,17 @@ void rainbow() {
     auto color = strip.ColorHSV(hue, saturation, brightness);
     strip.setPixelColor(i, color);
   }
-  strip.show();
+}
+
+void strobe() {
+  // uses speed and cycles
+  auto ms = clock_millis();
+  bool on = fmod(ms * (double)speed, 1000) > 500;
+  auto color = on ? strip.ColorHSV(0,0,brightness): strip.Color(0,0,0);
+
+   for (int i = 0; i < led_count; ++i) {
+    strip.setPixelColor(i, color);
+  }
 }
 
 void off() { strip.clear(); }
@@ -878,57 +891,50 @@ void loop() {
     last_bluetooth_line = line_reader.line;
   }
 
-  if(lights_on) {
-    switch (light_mode) {
-      case mode_usa:
-        usa();
-        break;
-      case mode_rainbow:
-        rainbow();
-        break;
-      case mode_rgb:
-        rgb();
-        break;
-      case mode_green:
-        repeat({strip.Color(0, 50, 0)});
-        break;
-      case mode_explosion:
-        explosion();
-        break;
-      case mode_pattern1:
-        pattern1();
-        break;
-      case mode_color:
-        repeat(current_colors);
-        break;
+  if(every_n_ms(last_loop_ms, loop_ms, 30)) {
+
+    if(lights_on) {
+      switch (light_mode) {
+        case mode_usa:
+          usa();
+          break;
+        case mode_rainbow:
+          rainbow();
+          break;
+        case mode_strobe:
+          strobe();
+          break;
+        case mode_rgb:
+          rgb();
+          break;
+        case mode_green:
+          repeat({strip.Color(0, 50, 0)});
+          break;
+        case mode_explosion:
+          explosion();
+          break;
+        case mode_pattern1:
+          pattern1();
+          break;
+        case mode_color:
+          repeat(current_colors);
+          break;
+      }
+    } else {
+      off();
     }
-  } else {
-    off();
+      
+    for (uint16_t i = 0; i < strip.numPixels(); i++) {
+      auto &p = strands[0]->pixels[i];
+      p.num = strip.getPixelColor(i);
+      std::swap(p.g, p.b);
+      std::swap(p.r, p.b);
+    }
+
+    digitalLeds_drawPixels(strands, STRANDCNT);
   }
 
-  // trans();
-  // rainbow();
-  // usa();
-  // pattern1();
-  // rgb();
-  // repeat({strip.Color(0,0,50)});
-  // repeat({strip.Color(18,0,22)});// purple 0.090A
-  // repeat({strip.Color(20,10,0), strip.Color(25,16,0),strip.Color(14,5,2)});//
-  // orange/brown? repeat({strip.Color(20,0,0), strip.Color(0,20,0)});//
-  // red/green 0.063A repeat({strip.Color(255,255,255)}); // bright white, 2.123A
-  // / 50LEDS
-  // explosion();
 
-  for (uint16_t i = 0; i < strip.numPixels(); i++) {
-    auto &p = strands[0]->pixels[i];
-    p.num = strip.getPixelColor(i);
-    std::swap(p.g, p.b);
-    std::swap(p.r, p.b);
-  }
-
-  digitalLeds_drawPixels(strands, STRANDCNT);
-
-  delay(lights_on ? 20 : 200);
   // esp_sleep_enable_timer_wakeup(30000);
   // esp_light_sleep_start();
   last_loop_ms = loop_ms;
