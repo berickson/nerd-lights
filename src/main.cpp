@@ -4,6 +4,7 @@
 #include <avr/power.h>
 #endif
 #include <vector>
+#include <queue>
 #include "StringStream.h"
 
 #include "Preferences.h"  // save preferences to non-volatile memory
@@ -300,6 +301,7 @@ enum LightMode {
   mode_rainbow,
   mode_green,
   mode_strobe,
+  mode_twinkle,
   mode_color,
   mode_last = mode_color
 };
@@ -395,6 +397,7 @@ void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
 
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
+void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
 
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
@@ -633,6 +636,7 @@ void setup() {
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
   commands.emplace_back(Command{"strobe", cmd_strobe, "flashes whole strand at once"});
+  commands.emplace_back(Command{"twinkle", cmd_twinkle, "twinkle random lights"});
   commands.emplace_back(Command{"saturation", cmd_saturation,
                                 "set saturation 0-255 for rainbow effect"});
   commands.emplace_back(Command{"brightness", cmd_brightness,
@@ -783,6 +787,73 @@ void strobe() {
   }
 }
 
+// returns a random double [0,1)
+double frand() {
+  return double(rand()) / (double(RAND_MAX) + 1.0);
+}
+
+void twinkle() {
+  bool trace = false;
+  if(trace) Serial.println("start twinkle");
+  uint32_t ms = clock_millis();
+  static double next_ms = 0;
+  static uint16_t min_brightness = 0;
+  static uint16_t max_brightness = 100;
+
+  if(ms - next_ms > 1000) {
+    next_ms = ms;
+  };
+
+  struct blinking_led_t {
+    uint16_t led_number;
+    uint32_t done_ms;
+  };
+
+  static std::deque<blinking_led_t> blinking_leds;
+
+  
+  // about 50% of the lights are twinkling at any time
+  float ratio_twinkling = .5;
+  uint32_t average_twinkling_count = led_count * ratio_twinkling;
+  uint32_t max_twinkling_count = average_twinkling_count*2;
+
+  // twinkling takes 5 second
+  uint16_t twinkle_ms = 1000;
+  float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
+
+  if(trace) Serial.println("a");
+  // remove done LEDS
+  while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
+    strip.setPixelColor( blinking_leds.front().led_number, 5);
+    blinking_leds.pop_front();
+  }
+
+  if(trace) Serial.println("b");
+
+  while(next_ms <= ms) {
+    // add a twinkling led to list
+    if(blinking_leds.size() < max_twinkling_count) {
+      blinking_led_t led;
+      led.done_ms = ms+twinkle_ms;
+      led.led_number = rand() % led_count;
+      blinking_leds.push_back(led);
+    }
+
+    // add random time to next_ms
+    double add_ms = frand() * 2 * average_ms_per_new_twinkle;
+    next_ms = next_ms + add_ms;
+  }
+
+  if(trace) Serial.println("c");
+
+  for(auto & led : blinking_leds) {
+    auto time_left = led.done_ms - ms;
+    float remaining = (float)time_left / twinkle_ms;
+    strip.setPixelColor( led.led_number, min_brightness+ (max_brightness-min_brightness) * remaining * remaining);
+  }
+  if(trace) Serial.println("done twinkle");
+}
+
 void off() { strip.clear(); }
 
 void explosion() {
@@ -838,12 +909,14 @@ bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms,
 }
 
 void loop() {
+  static unsigned long loop_count = 0;
+  ++loop_count;
   static unsigned long last_loop_ms = 0;
   unsigned long loop_ms = clock_millis();
 
   if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
     Serial.print("loop ");
-    Serial.println(loop_ms);
+    Serial.println(loop_count);
   }
 
   if (every_n_ms(loop_ms, last_loop_ms, 1)) {
@@ -903,6 +976,9 @@ void loop() {
           break;
         case mode_strobe:
           strobe();
+          break;
+        case mode_twinkle:
+          twinkle();
           break;
         case mode_rgb:
           rgb();
