@@ -216,7 +216,9 @@ class WifiTask {
           break;
         }
         if (wifi_status == WL_CONNECTED) {
+          Serial.println("IP Address: " + WiFi.localIP().toString());
           configTime(-8*60*60, -7*60*60, "pool.ntp.org");
+          Serial.println("Got time");
           server.begin();
           current_state = status_awaiting_client;
           if (trace) Serial.print("wifi connected, web server started");
@@ -406,6 +408,18 @@ void cmd_green(CommandEnvironment &env) { set_light_mode(mode_green); }
 
 std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
 
+
+void add_color(uint32_t color) {
+  current_colors.push_back(color);
+  uint16_t color_index = current_colors.size()-1; 
+  String key = "color"+color_index;
+
+  preferences.begin("main");
+  preferences.putUInt("color_count", current_colors.size());
+  preferences.putUInt(key.c_str(), current_colors[color_index]);
+  preferences.end();
+}
+
 void cmd_color(CommandEnvironment &env) {
   if (env.args.getParamCount() != 3) {
     env.cerr.printf("failed - requires three parameters");
@@ -415,7 +429,9 @@ void cmd_color(CommandEnvironment &env) {
   uint32_t color =
       strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
                   atoi(env.args.getCmdParam(3)));
-  current_colors = {color};
+  current_colors.clear();
+  add_color(color);
+  
   set_light_mode(mode_color);
 }
 
@@ -491,6 +507,9 @@ void cmd_saturation(CommandEnvironment &env) {
   set_saturation(new_saturation);
 }
 
+
+
+
 void cmd_add_color(CommandEnvironment &env) {
   if (env.args.getParamCount() != 3) {
     env.cerr.printf("failed - requires three parameters");
@@ -501,7 +520,7 @@ void cmd_add_color(CommandEnvironment &env) {
   uint32_t color =
       strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
                   atoi(env.args.getCmdParam(3)));
-  current_colors.push_back(color);
+  add_color(color);
 }
 
 void cmd_set_led_count(CommandEnvironment &env) {
@@ -602,6 +621,18 @@ void setup() {
   speed = preferences.getFloat("speed", 1.0);
   cycles = preferences.getFloat("cycles", 1.0);
   bluetooth_device_name = preferences.getString("bt_name", "ledlights");
+
+  current_colors.clear();
+  auto color_count = preferences.getUInt("color_count", 1);
+  Serial.println((String)"color_count:" + color_count);
+  for(int i=0;i<color_count; ++i) {
+    String key = "color"+i;
+    uint32_t color = preferences.getUInt(key.c_str(), 0x300000);
+    current_colors.push_back(color);
+    Serial.println(key+": "+color);
+  }
+  preferences.end();
+
 
   preferences.end();
 
@@ -824,7 +855,7 @@ void twinkle() {
   if(trace) Serial.println("a");
   // remove done LEDS
   while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
-    strip.setPixelColor( blinking_leds.front().led_number, 5);
+    strip.setPixelColor( blinking_leds.front().led_number, min_brightness);
     blinking_leds.pop_front();
   }
 
