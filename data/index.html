@@ -5,12 +5,19 @@
 body {
     font-size: 36px;
 }
+input {
+    font-size: 36px;;
+}
+
+
 
 button {
 background-color: #888888; /* gray */
-border: none;
+margin-bottom:5px;
+border-color:white;
+border: 40px;
 color: white;
-padding: 15px 32px;
+padding: 5px 15px;
 text-align: center;
 text-decoration: none;
 display: inline-block;
@@ -20,6 +27,23 @@ font-size: 36px;
     </head>
     <body>
         <script>
+            function log_scale(p, minp=0, maxp=100, min=0.1, max=10) {
+                // The result should be between min and max
+                var minv = Math.log(min);
+                var maxv = Math.log(max);
+
+                // calculate adjustment factor
+                var scale = (maxv-minv) / (maxp-minp);
+
+                return Math.exp(minv + scale*(p-minp));
+            }
+
+            function command(s) {
+                let r = new XMLHttpRequest();
+                r.open("POST", "command");
+                r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+                r.send(s);
+            }
             function power_on() {
                 let r = new XMLHttpRequest();
                 r.open("POST", "command");
@@ -33,10 +57,45 @@ font-size: 36px;
                 r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
                 r.send("off");
             }
+
+            function cycles_input() {
+                let cycles_p = parseInt(document.getElementById("cycles").value);
+                let cycles = log_scale(cycles_p, 1, 100, 0.01, 10);
+                let cycles_str = cycles.toFixed(2);
+                document.getElementById('cycles_value').innerHTML = cycles_str;
+            }
+            function cycles_change() {
+                let v = document.getElementById('cycles_value').innerHTML
+                command("cycles "+ v);
+            }
+
+            function speed_input() {
+                let speed_p = parseInt(document.getElementById("speed").value);
+                let speed = log_scale(speed_p, 1, 100, 0.01, 10);
+                let speed_str = speed.toFixed(2);
+                document.getElementById('speed_value').innerHTML = speed_str;
+            }
+            function speed_change() {
+                let v = document.getElementById('speed_value').innerHTML
+                command("speed "+ v);
+            }
+
         </script>
 
         <h1>%device_name%</h1>
         <button onclick="power_on()">on</button> <button onclick="power_off()">off</button><br>
+        <br>
+        <button onclick="command('rainbow')">rainbow</button>
+        <button onclick="command('twinkle')">twinkle</button>
+        <button onclick="command('pattern1')">pattern1</button>
+        <button onclick="command('explosion')">explosion</button><br>
+        <button onclick="command('color 30 0 0')">red</button><br>
+        <button onclick="command('color 0 30 0')">green</button><br>
+        <button onclick="command('color 0 0 30')">blue</button><br>
+        cycles: <input id='cycles'type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
+        speed: <input id='speed' type='range' min="1" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
+
+        <br>
         <a href='command_line.html'>command_line.html</a>
     </body>
 </html>

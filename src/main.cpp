@@ -461,8 +461,8 @@ void cmd_cycles(CommandEnvironment &env) {
   }
   if (env.args.getParamCount() == 1) {
     auto new_cycles = atof(env.args.getCmdParam(1));
-    if (!(new_cycles > 0.01 && new_cycles < 1000)) {
-      env.cerr.printf("failed - cycles should be between 0.01 and 1000");
+    if (!(new_cycles > 0.0001 && new_cycles < 1000)) {
+      env.cerr.printf("failed - cycles should be between 0.0001 and 1000");
       return;
     }
     cycles = new_cycles;
