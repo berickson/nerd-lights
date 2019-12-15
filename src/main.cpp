@@ -3,6 +3,7 @@
 #ifdef __AVR__
 #include <avr/power.h>
 #endif
+
 #include <vector>
 #include <queue>
 #include "StringStream.h"
@@ -723,20 +724,33 @@ void setup() {
           CmdParser parser;
           String body = p->value();
 
-          parser.parseCmd((char *)body.c_str());
-          auto command = get_command_by_name(parser.getCommand());
-          if(command == nullptr) {
-              request->send(200,"text/plain","command failed");
-          } else {
-              String output_string;
-              StringStream output_stream(output_string);
-              CommandEnvironment env(parser, output_stream, output_stream);
-              command->execute(env);
-              if(env.ok) {
-                request->send(200,"text/plain", output_string);
-              } else {
+          while(body.length()) {
+            int nsep = body.indexOf("\n");
+            String str_command;
+            if(nsep > 0) {
+              str_command = body.substring(0,nsep);
+              body = body.substring(nsep+1);
+            } else {
+              str_command = body;
+              body = "";
+            }
+          
+
+            parser.parseCmd((char *)str_command.c_str());
+            auto command = get_command_by_name(parser.getCommand());
+            if(command == nullptr) {
                 request->send(200,"text/plain","command failed");
-              }
+            } else {
+                String output_string;
+                StringStream output_stream(output_string);
+                CommandEnvironment env(parser, output_stream, output_stream);
+                command->execute(env);
+                if(env.ok) {
+                  request->send(200,"text/plain", output_string);
+                } else {
+                  request->send(200,"text/plain","command failed");
+                }
+            }
           }
         }
         request->send(400,"text/plain","no post body sent");
@@ -823,13 +837,38 @@ double frand() {
   return double(rand()) / (double(RAND_MAX) + 1.0);
 }
 
+template<class T> T clamp(T v, T min, T max) {
+  if (v<min) return min;
+  if (v>max) return max;
+  return v;
+
+}
+
+uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
+  part2 = clamp<float>(part2, 0., 1.);
+  float part1 = 1-part2;
+  auto r1 = (c1 & 0xff0000)>>16;
+  auto g1 = (c1 & 0xff00)>>8;
+  auto b1 = c1 & 0xff;
+  auto r2 = (c2 & 0xff0000)>>16;
+  auto g2 = (c2 & 0xff00)>>8;
+  auto b2 = c2 & 0xff;
+  uint32_t color = strip.Color(r1*part1+r2*part2+0.5, g1*part1+g2*part2+0.5, b1*part1+b2*part2+0.5);
+  /*
+  Serial.print("part2: ");
+  Serial.print(part2);
+  Serial.print(" mixed:");
+  Serial.printlln(color);
+  */
+
+  return color;
+}
+
 void twinkle() {
   bool trace = false;
   if(trace) Serial.println("start twinkle");
   uint32_t ms = clock_millis();
   static double next_ms = 0;
-  static uint16_t min_brightness = 0;
-  static uint16_t max_brightness = 100;
 
   if(ms - next_ms > 1000) {
     next_ms = ms;
@@ -838,13 +877,15 @@ void twinkle() {
   struct blinking_led_t {
     uint16_t led_number;
     uint32_t done_ms;
+    uint32_t twinkle_color;
   };
 
   static std::deque<blinking_led_t> blinking_leds;
 
+
   
   // about 50% of the lights are twinkling at any time
-  float ratio_twinkling = .5;
+  float ratio_twinkling = .1;
   uint32_t average_twinkling_count = led_count * ratio_twinkling;
   uint32_t max_twinkling_count = average_twinkling_count*2;
 
@@ -853,9 +894,18 @@ void twinkle() {
   float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
 
   if(trace) Serial.println("a");
+
+  bool multi = current_colors.size() >= 2;
+  uint32_t base_color = multi ? current_colors[0] : black;
+
+  for(int i = 0; i < led_count; ++i) {
+    strip.setPixelColor(i, base_color);
+  }
+  
+
   // remove done LEDS
   while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
-    strip.setPixelColor( blinking_leds.front().led_number, min_brightness);
+    strip.setPixelColor( blinking_leds.front().led_number, base_color );
     blinking_leds.pop_front();
   }
 
@@ -864,10 +914,20 @@ void twinkle() {
   while(next_ms <= ms) {
     // add a twinkling led to list
     if(blinking_leds.size() < max_twinkling_count) {
+      
       blinking_led_t led;
       led.done_ms = ms+twinkle_ms;
       led.led_number = rand() % led_count;
-      blinking_leds.push_back(led);
+      led.twinkle_color = multi ? current_colors[rand()% (current_colors.size()-1)+1] : current_colors[0];
+      bool already_blinking = false;
+      for(auto blinking : blinking_leds) {
+        if(blinking.led_number == led.led_number) {
+          already_blinking = true;
+        }
+      }
+      if(!already_blinking) {
+        blinking_leds.push_back(led);
+      }
     }
 
     // add random time to next_ms
@@ -878,9 +938,17 @@ void twinkle() {
   if(trace) Serial.println("c");
 
   for(auto & led : blinking_leds) {
-    auto time_left = led.done_ms - ms;
-    float remaining = (float)time_left / twinkle_ms;
-    strip.setPixelColor( led.led_number, min_brightness+ (max_brightness-min_brightness) * remaining * remaining);
+    // time from midpoint peak
+    auto ms_peak = led.done_ms - twinkle_ms/2.;
+    auto from_peak = abs(ms-ms_peak);
+    auto level = 1. - from_peak / (twinkle_ms/2);
+    
+    //auto time_left = led.done_ms - ms;
+    //float remaining = (float)time_left / twinkle_ms;
+    //float ratio_twinkle = remaining * remaining;
+    uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
+    
+    strip.setPixelColor( led.led_number, color);
   }
   if(trace) Serial.println("done twinkle");
 }

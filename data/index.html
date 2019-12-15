@@ -1,29 +1,29 @@
 <html>
     <head>
         <title>%device_name%</title>
-        <style>
+<style>
 body {
     font-size: 36px;
 }
 input {
     font-size: 36px;;
 }
-
-
-
-button {
-background-color: #888888; /* gray */
-margin-bottom:5px;
-border-color:white;
-border: 40px;
-color: white;
-padding: 5px 15px;
-text-align: center;
-text-decoration: none;
-display: inline-block;
-font-size: 36px;
+.slider {
+    width: 400px;
 }
-        </style>
+button {
+    background-color: #888888; /* gray */
+    margin-bottom:5px;
+    border-color:white;
+    border: 40px;
+    color: white;
+    padding: 5px 15px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 36px;
+}
+</style>
     </head>
     <body>
         <script>
@@ -64,6 +64,7 @@ font-size: 36px;
                 let cycles_str = cycles.toFixed(2);
                 document.getElementById('cycles_value').innerHTML = cycles_str;
             }
+
             function cycles_change() {
                 let v = document.getElementById('cycles_value').innerHTML
                 command("cycles "+ v);
@@ -80,6 +81,28 @@ font-size: 36px;
                 command("speed "+ v);
             }
 
+            function brightness_input() {
+                let brightness = parseInt(document.getElementById("brightness").value);
+                let brightness_str = String(brightness);
+                document.getElementById('brightness_value').innerHTML = brightness_str;
+            }
+            function brightness_change() {
+                let v = document.getElementById('brightness_value').innerHTML
+                command("brightness "+ v);
+            }
+
+            function saturation_input() {
+                let saturation = parseInt(document.getElementById("saturation").value);
+                let saturation_str = String(saturation);
+                document.getElementById('saturation_value').innerHTML = saturation_str;
+            }
+            function saturation_change() {
+                let v = document.getElementById('saturation_value').innerHTML
+                command("saturation "+ v);
+            }
+
+
+
         </script>
 
         <h1>%device_name%</h1>
@@ -88,12 +111,21 @@ font-size: 36px;
         <button onclick="command('rainbow')">rainbow</button>
         <button onclick="command('twinkle')">twinkle</button>
         <button onclick="command('pattern1')">pattern1</button>
+        <button onclick="command('color 30 0 0\nadd 200 0 0\nadd 200 15 0\nadd 100 15 0\ntwinkle')">embers</button>
+        <button onclick='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
         <button onclick="command('explosion')">explosion</button><br>
-        <button onclick="command('color 30 0 0')">red</button><br>
-        <button onclick="command('color 0 30 0')">green</button><br>
-        <button onclick="command('color 0 0 30')">blue</button><br>
-        cycles: <input id='cycles'type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
-        speed: <input id='speed' type='range' min="1" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
+        <button onclick="command('color 30 0 0')">red</button>
+        <button onclick="command('color 0 30 0')">green</button>
+        <button onclick="command('color 0 0 30')">blue</button>
+        <button onclick="command('color 30 0 30')">purple</button>
+        <button onclick="command('color 40 30 0')">yellow</button>
+        <button onclick="command('color 0 30 30')">teal</button>
+        <button onclick="command('color 60 20 20')">pink</button>
+        <button onclick="command('color 40 2 0\nadd 30 25 0\nadd 3 3 35\nadd 40 10 0\nadd 3 40 3')">match</button><br>
+        brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>
+        saturation: <input id='saturation' class='slider' type='range' min="0" max="255" oninput="saturation_input()" onchange="saturation_change()"></input>  <div style='display:inline-block' id='saturation_value'></div><br>
+        speed: <input id='speed' class='slider' type='range' min="1" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
+        cycles: <input id='cycles'class='slider' type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
 
         <br>
         <a href='command_line.html'>command_line.html</a>
