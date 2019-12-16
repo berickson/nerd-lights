@@ -25,6 +25,11 @@
 
 #include <chrono>
 
+// circular buffer, from https://github.com/martinmoene/ring-span-lite
+#include "ring_span.hpp"
+template< typename T, size_t N >
+inline size_t dim( T (&arr)[N] ) { return N; }
+
 // board at https://www.amazon.com/gp/product/B07DKD79Y9
 // oled
 const int oled_address = 0x3c;
@@ -154,8 +159,7 @@ class WifiTask {
   String version = "";  // HTTP Version
 
   bool enabled = false;
-  bool trace = false;
-  bool log_serial = true;
+  bool trace = true;
 
   enum {
     status_disabled,
@@ -724,36 +728,47 @@ void setup() {
           CmdParser parser;
           String body = p->value();
 
-          while(body.length()) {
-            int nsep = body.indexOf("\n");
+          int32_t n_start = 0;
+          bool done = false;
+          bool ok = true;
+          String output_string = "";
+          while(!done) {
+            int n_sep = body.indexOf("\n", n_start);
             String str_command;
-            if(nsep > 0) {
-              str_command = body.substring(0,nsep);
-              body = body.substring(nsep+1);
+            if(n_sep > 0) {
+              str_command = body.substring(n_start,n_sep);
+              n_start = n_sep+1;
             } else {
-              str_command = body;
-              body = "";
+              str_command = body.substring(n_start);
+              done=true;
             }
+            Serial.print("command: ");
+            Serial.println(str_command);
           
 
             parser.parseCmd((char *)str_command.c_str());
             auto command = get_command_by_name(parser.getCommand());
             if(command == nullptr) {
+              ok = false;
+              break;
                 request->send(200,"text/plain","command failed");
             } else {
-                String output_string;
                 StringStream output_stream(output_string);
                 CommandEnvironment env(parser, output_stream, output_stream);
                 command->execute(env);
-                if(env.ok) {
-                  request->send(200,"text/plain", output_string);
-                } else {
-                  request->send(200,"text/plain","command failed");
-                }
+                ok = env.ok;
+                if(!ok) break;
+
             }
           }
-        }
+          if(ok) {
+            request->send(200,"text/plain", output_string);
+          } else {
+            request->send(200,"text/plain","command failed");
+          }
+        } else {
         request->send(400,"text/plain","no post body sent");
+        }
       }
     }
     );
@@ -880,14 +895,17 @@ void twinkle() {
     uint32_t twinkle_color;
   };
 
-  static std::deque<blinking_led_t> blinking_leds;
+  // static std::deque<blinking_led_t> blinking_leds;
+  static blinking_led_t arr[100];
+  static nonstd::ring_span<blinking_led_t> blinking_leds( arr, arr + dim(arr), arr, 0);
+
 
 
   
   // about 50% of the lights are twinkling at any time
   float ratio_twinkling = .1;
   uint32_t average_twinkling_count = led_count * ratio_twinkling;
-  uint32_t max_twinkling_count = average_twinkling_count*2;
+  uint32_t max_twinkling_count = dim(arr);//average_twinkling_count*2;
 
   // twinkling takes 5 second
   uint16_t twinkle_ms = 1000;
@@ -1013,10 +1031,10 @@ void loop() {
   static unsigned long last_loop_ms = 0;
   unsigned long loop_ms = clock_millis();
 
-  if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
-    Serial.print("loop ");
-    Serial.println(loop_count);
-  }
+  // if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
+  //   Serial.print("loop ");
+  //   Serial.println(loop_count);
+  // }
 
   if (every_n_ms(loop_ms, last_loop_ms, 1)) {
     wifi_task.execute();
@@ -1040,7 +1058,9 @@ void loop() {
       display.drawString(0, 40, buff);
     }
 
-    display.drawString(0,50,String(clock_millis()));
+    char buff[80];
+    sprintf(buff, "free: %d",ESP.getFreeHeap());
+    display.drawString(0,50,buff);
 
     display.display();
   }
