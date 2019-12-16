@@ -38,6 +38,12 @@ button {
                 return Math.exp(minv + scale*(p-minp));
             }
 
+            function set_color(c) {
+                let add_checked = document.getElementById('add_checkbox').checked;
+                let cmd = (add_checked ? "add " : "color ") + c;
+                command(cmd);
+            }
+
             function command(s) {
                 let r = new XMLHttpRequest();
                 r.open("POST", "command");
@@ -45,17 +51,11 @@ button {
                 r.send(s);
             }
             function power_on() {
-                let r = new XMLHttpRequest();
-                r.open("POST", "command");
-                r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
-                r.send("on");
+                command("on");
             }
 
             function power_off() {
-                let r = new XMLHttpRequest();
-                r.open("POST", "command");
-                r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
-                r.send("off");
+                command("off");
             }
 
             function cycles_input() {
@@ -76,6 +76,7 @@ button {
                 let speed_str = speed.toFixed(2);
                 document.getElementById('speed_value').innerHTML = speed_str;
             }
+
             function speed_change() {
                 let v = document.getElementById('speed_value').innerHTML
                 command("speed "+ v);
@@ -86,6 +87,7 @@ button {
                 let brightness_str = String(brightness);
                 document.getElementById('brightness_value').innerHTML = brightness_str;
             }
+
             function brightness_change() {
                 let v = document.getElementById('brightness_value').innerHTML
                 command("brightness "+ v);
@@ -96,38 +98,46 @@ button {
                 let saturation_str = String(saturation);
                 document.getElementById('saturation_value').innerHTML = saturation_str;
             }
+
             function saturation_change() {
                 let v = document.getElementById('saturation_value').innerHTML
                 command("saturation "+ v);
             }
-
-
-
         </script>
 
         <h1>%device_name%</h1>
-        <button onclick="power_on()">on</button> <button onclick="power_off()">off</button><br>
-        <br>
-        <button onclick="command('rainbow')">rainbow</button>
-        <button onclick="command('twinkle')">twinkle</button>
-        <button onclick="command('pattern1')">pattern1</button>
-        <button onclick="command('color 30 0 0\nadd 200 0 0\nadd 200 15 0\nadd 100 15 0\nadd 100 70 0\ntwinkle')">embers</button>
-        <button onclick='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
-        <button onclick="command('explosion')">explosion</button><br>
-        <button onclick="command('color 30 0 0')">red</button>
-        <button onclick="command('color 0 30 0')">green</button>
-        <button onclick="command('color 0 0 30')">blue</button>
-        <button onclick="command('color 30 0 30')">purple</button>
-        <button onclick="command('color 40 30 0')">yellow</button>
-        <button onclick="command('color 0 30 30')">teal</button>
-        <button onclick="command('color 60 20 20')">pink</button>
-        <button onclick="command('color 40 2 0\nadd 30 25 0\nadd 3 3 35\nadd 40 10 0\nadd 3 40 3')">match</button><br>
+        <button onmousedown="power_on()">on</button> <button onmousedown="power_off()">off</button>
+
+        <h2>Effects</h2>
+        <button onmousedown="command('rainbow')">rainbow</button>
+        <button onmousedown="command('twinkle')">twinkle</button>
+        <button onmousedown="command('pattern1')">pattern1</button>
+        <button onmousedown="command('color 30 0 0\nadd 200 0 0\nadd 200 15 0\nadd 100 15 0\nadd 200 40 0\ntwinkle')">embers</button>
+        <button onmousedown='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
+        <button onmousedown="command('explosion')">explosion</button>
+
+        <h2>Colors<h2>
+        <input type="checkbox" id="add_checkbox">Add</input>
+        <button onmousedown="set_color('50 30 10')">warm</button>
+        <button onmousedown="set_color('30 0 0')">red</button>
+        <button onmousedown="set_color('0 30 0')">green</button>
+        <button onmousedown="set_color('0 0 30')">blue</button>
+        <button onmousedown="set_color('30 0 30')">purple</button>
+        <button onmousedown="set_color('40 30 0')">yellow</button>
+        <button onmousedown="set_color('0 30 30')">teal</button>
+        <button onmousedown="set_color('60 20 20')">pink</button>
+
+        <h2>Color Schemes</h2>
+        <button onmousedown="command('color 0 70 30\nadd 0 55 45')">aqua</button>
+        <button onmousedown="command('color 50 0 0\nadd 30 10 10')">vday</button>
+        <button onmousedown="command('color 40 2 0\nadd 30 25 0\nadd 3 3 35\nadd 40 10 0\nadd 3 40 3')">match</button>
+
+        <h2>Rainbow Config</h2>
         brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>
         saturation: <input id='saturation' class='slider' type='range' min="0" max="255" oninput="saturation_input()" onchange="saturation_change()"></input>  <div style='display:inline-block' id='saturation_value'></div><br>
         speed: <input id='speed' class='slider' type='range' min="1" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
         cycles: <input id='cycles'class='slider' type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
 
-        <br>
-        <a href='command_line.html'>command_line.html</a>
+        <h2><a href='command_line.html'>command_line.html</a></h2>
     </body>
 </html>
