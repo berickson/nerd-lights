@@ -5,12 +5,18 @@
 body {
     font-size: 36px;
 }
-input {
-    font-size: 36px;;
+h2 {
+    margin-block-end: 0px;
+}
+
+#add_checkbox {
+    height: 36px;
+    width: 36px;
 }
 .slider {
     width: 400px;
 }
+
 button {
     background-color: #888888; /* gray */
     margin-bottom:5px;
@@ -116,9 +122,10 @@ button {
         <button onmousedown='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
         <button onmousedown="command('explosion')">explosion</button>
 
-        <h2>Colors<h2>
-        <input type="checkbox" id="add_checkbox">Add</input>
-        <button onmousedown="set_color('50 30 10')">warm</button>
+        <h2>Colors - <input type="checkbox" id="add_checkbox">Check here to add</input></h2>
+        
+        <button onmousedown="set_color('50 35 15')">warm</button>
+        <button onmousedown="set_color('50 50 50')">snow</button>
         <button onmousedown="set_color('30 0 0')">red</button>
         <button onmousedown="set_color('0 30 0')">green</button>
         <button onmousedown="set_color('0 0 30')">blue</button>
