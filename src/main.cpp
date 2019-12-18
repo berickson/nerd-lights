@@ -309,6 +309,7 @@ enum LightMode {
   mode_green,
   mode_strobe,
   mode_twinkle,
+  mode_stripes,
   mode_color,
   mode_last = mode_color
 };
@@ -438,6 +439,10 @@ void cmd_color(CommandEnvironment &env) {
   add_color(color);
   
   set_light_mode(mode_color);
+}
+
+void cmd_stripes(CommandEnvironment & env) {
+  set_light_mode(mode_stripes);
 }
 
 void cmd_brightness(CommandEnvironment &env) {
@@ -692,6 +697,9 @@ void setup() {
   commands.emplace_back(
       Command("add", cmd_add_color,
               "adds a color to current pallet {red} {blue} {green}"));
+  commands.emplace_back(
+      Command("stripes", cmd_stripes,
+              "stripes based on the current colors"));
   commands.emplace_back(Command("ledcount", cmd_set_led_count,
                                 "sets the total number of leds on the strand"));
   commands.emplace_back(Command{"next", cmd_next, "cycles to the next mode"});
@@ -1003,6 +1011,17 @@ void explosion() {
   }
 }
 
+void stripes(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
+  if(led_count==0) {
+    return;
+  }
+  for (int i = 0; i < led_count; ++i) {
+    int n_color = clamp<int>(i * colors.size() / led_count, 0, colors.size());
+    auto color = colors[n_color];
+    strip.setPixelColor(i, color);
+  }
+}
+
 void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / repeat_count) % colors.size()];
@@ -1095,6 +1114,9 @@ void loop() {
           break;
         case mode_strobe:
           strobe();
+          break;
+        case mode_stripes:
+          stripes(current_colors);
           break;
         case mode_twinkle:
           twinkle();
