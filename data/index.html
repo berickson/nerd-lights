@@ -29,10 +29,62 @@ button {
     display: inline-block;
     font-size: 36px;
 }
+.small {
+    font-size:20px;
+    align: center;
+}
 </style>
     </head>
     <body>
+        <template id="color-button">
+            <span style='display:inline-block;text-align:center;'>
+            <svg  width="80" height="80">
+                <rect id="color-box" x=5 y=5 width="75" height="75" rx=15 style="fill:rgb(0,0,0);stroke-width:3;stroke:rgb(150,150,150)" />
+            </svg>
+            <br>
+            <span class="small" id='label' '></span>
+            </span>
+        </template>
         <script>
+            var the_element;
+            customElements.define('color-button',
+                class extends HTMLElement {
+                    constructor() {
+                        super();
+                        this.template = document.getElementById('color-button');
+                        the_element = this;
+                    }
+
+                    // using connected compenent instead of shadow dom so styles can be inheritd
+                    connectedCallback() {
+                        let e=document.importNode(this.template.content, true);
+                        this.appendChild(e);
+                        let r = this.getAttribute('r');
+                        let g = this.getAttribute('g');
+                        let b = this.getAttribute('b');
+
+                        // get full colors to use on screen
+                        let v = Math.max(r,g,b)
+                        let screen_r = v == 0 ? r : r*255/v;
+                        let screen_g = v == 0 ? g : g*255/v;
+                        let screen_b = v == 0 ? b : b*255/v;
+                        let screen_color = 'rgb('+screen_r+","+screen_g+","+screen_b+')';
+                        this.querySelector("#color-box").style.fill=screen_color;
+                        let t = this.innerText;
+                        this.querySelector("#label").innerText = this.getAttribute('name');
+                        //this.innerText = "";
+                        
+                        this.querySelector("#color-box").addEventListener("mousedown", function() {
+                            set_color(String(r)+" "+g+" "+b);
+                        });
+                        // e.addEventListener("mousedown", function() {
+                        //     set_color(String(r)+" "+g+" "+b);
+                        // });
+
+                    }
+                }
+            );
+
             function log_scale(p, minp=0, maxp=100, min=0.1, max=10) {
                 // The result should be between min and max
                 var minv = Math.log(min);
@@ -121,18 +173,22 @@ button {
         <button onmousedown="command('color 30 0 0\nadd 200 0 0\nadd 200 15 0\nadd 100 15 0\nadd 200 40 0\ntwinkle')">embers</button>
         <button onmousedown='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
         <button onmousedown="command('explosion')">explosion</button>
+        <button onmousedown="command('stripes')">stripes</button>
 
         <h2>Colors - <input type="checkbox" id="add_checkbox">Check here to add</input></h2>
-        
-        <button onmousedown="set_color('50 35 15')">warm</button>
-        <button onmousedown="set_color('50 50 50')">snow</button>
-        <button onmousedown="set_color('30 0 0')">red</button>
-        <button onmousedown="set_color('0 30 0')">green</button>
-        <button onmousedown="set_color('0 0 30')">blue</button>
-        <button onmousedown="set_color('30 0 30')">purple</button>
-        <button onmousedown="set_color('40 30 0')">yellow</button>
-        <button onmousedown="set_color('0 30 30')">teal</button>
-        <button onmousedown="set_color('60 20 20')">pink</button>
+
+
+        <color-button r="50" g="35" b="15" name="warm"/>
+        <color-button r="50" g="50" b="50" name="snow"/>
+        <color-button r="30" g="0" b="0" name="red"/>
+        <color-button r="60" g="20" b="20" name="pink"/>
+        <color-button r="0" g="30" b="0" name="green"/>
+        <color-button r="0" g="0" b="30" name="blue"/>
+        <color-button r="30" g="0" b="30" name="purple"/>
+        <color-button r="40" g="30" b="0" name="yellow"/>
+        <color-button r="0" g="30" b="30" name="teal"/>
+        <color-button r="0" g="0" b="0" name="black"/>
+
 
         <h2>Color Schemes</h2>
         <button onmousedown="command('color 0 70 30\nadd 0 55 45')">aqua</button>
