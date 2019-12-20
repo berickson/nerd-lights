@@ -784,6 +784,30 @@ void setup() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(SPIFFS, "/index.html", "text/html", false, get_variable_value);
   });
+
+  server.on("/chunked", HTTP_GET, [](AsyncWebServerRequest * request) {
+    Serial.println("\ninside chunked");
+    //Write up to "maxLen" bytes into "buffer" and return the amount written.
+    //index equals the amount of bytes that have been already sent
+    //You will be asked for more data until 0 is returned
+    //Keep in mind that you can not delay or yield waiting for more data!
+    AsyncWebServerResponse *response = request->beginChunkedResponse("text/plain", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+      auto file = SPIFFS.open("/index.html");
+      //Serial.printf("chunked being asked to read %d bytes starting at %d\n", maxLen, index);
+      file.seek(index);
+      auto bytes_read = file.read(buffer, maxLen);
+      Serial.printf("actually read %d bytes\n", bytes_read);
+      Serial.printf("closing file\n");
+      file.close();
+      return bytes_read;
+    });
+  
+    response->setContentType("text/html");
+    response->addHeader("Server","ESP Async Web Server");
+    request->send(response);
+    Serial.println("chunked done");
+  });
+
   server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(SPIFFS, "/index.html", "text/html", false, get_variable_value);
   });
@@ -1058,6 +1082,7 @@ void loop() {
   if (every_n_ms(loop_ms, last_loop_ms, 1)) {
     wifi_task.execute();
   }
+  
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
@@ -1150,6 +1175,8 @@ void loop() {
 
     digitalLeds_drawPixels(strands, STRANDCNT);
   }
+
+  delay(10);
 
 
   // esp_sleep_enable_timer_wakeup(30000);
