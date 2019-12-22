@@ -25,6 +25,23 @@
 
 #include <chrono>
 
+// poor man's semaphore
+class lock_t{
+  static bool locked;
+  public:
+  lock_t() {
+    while(locked) {
+    }
+    locked = true;
+  }
+
+  ~lock_t() {
+    locked = false;
+  }
+};
+
+bool lock_t::locked = false;
+
 // circular buffer, from https://github.com/martinmoene/ring-span-lite
 #include "ring_span.hpp"
 template< typename T, size_t N >
@@ -226,13 +243,13 @@ class WifiTask {
           Serial.println("Got time");
           server.begin();
           current_state = status_awaiting_client;
-          if (trace) Serial.print("wifi connected, web server started");
+          if (trace) Serial.println("wifi connected, web server started");
         } else {
           // if(every_n_ms(last_execute_ms, ms, 1000)) {
           //   Serial.print(wifi_status);
           // }
           if (ms - connect_start_ms > 5000) {
-            if (trace) Serial.print("couldn't connect, trying again");
+            if (trace) Serial.println("couldn't connect, trying again");
             WiFi.disconnect();
             current_state = status_not_connected;
             break;
@@ -242,7 +259,7 @@ class WifiTask {
 
       case status_awaiting_client:
         if (wifi_status != WL_CONNECTED) {
-          if (trace) Serial.print("wifi connected, web server stopped");
+          if (trace) Serial.println("wifi connected, web server stopped");
           current_state = status_not_connected;
           server.end();
           break;
@@ -606,14 +623,16 @@ Command *get_command_by_name(const char *command_name) {
 
 using namespace Colors;
 
-// feeds variables to html
-String get_variable_value(const String& var) {
-  if(var == "device_name"){
-    return bluetooth_device_name;
-  }
+#define get_variable_value NULL
 
-  return String();
-}
+// // feeds variables to html
+// String get_variable_value(const String& var) {
+//   if(var == "device_name"){
+//     return bluetooth_device_name;
+//   }
+
+//   return String();
+// }
 
 void setup() {
   // enable file system
@@ -720,6 +739,8 @@ void setup() {
     strands[i] = &STRANDS[i];
   }
   digitalLeds_addStrands(strands, STRANDCNT);
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  
 
   server.on(
     "/command",
@@ -780,41 +801,6 @@ void setup() {
       }
     }
     );
-  
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(SPIFFS, "/index.html", "text/html", false, get_variable_value);
-  });
-
-  server.on("/chunked", HTTP_GET, [](AsyncWebServerRequest * request) {
-    Serial.println("\ninside chunked");
-    //Write up to "maxLen" bytes into "buffer" and return the amount written.
-    //index equals the amount of bytes that have been already sent
-    //You will be asked for more data until 0 is returned
-    //Keep in mind that you can not delay or yield waiting for more data!
-    AsyncWebServerResponse *response = request->beginChunkedResponse("text/plain", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-      auto file = SPIFFS.open("/index.html");
-      //Serial.printf("chunked being asked to read %d bytes starting at %d\n", maxLen, index);
-      file.seek(index);
-      auto bytes_read = file.read(buffer, maxLen);
-      Serial.printf("actually read %d bytes\n", bytes_read);
-      Serial.printf("closing file\n");
-      file.close();
-      return bytes_read;
-    });
-  
-    response->setContentType("text/html");
-    response->addHeader("Server","ESP Async Web Server");
-    request->send(response);
-    Serial.println("chunked done");
-  });
-
-  server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(SPIFFS, "/index.html", "text/html", false, get_variable_value);
-  });
-  server.on("/command_line.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(SPIFFS, "/command_line.html", "text/html", false, get_variable_value);
-  });
-
 }  // setup
 
 void pattern1() {

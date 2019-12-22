@@ -1,0 +1,31 @@
+body {
+    font-size: 36px;
+}
+h2 {
+    margin-block-end: 0px;
+}
+
+#add_checkbox {
+    height: 36px;
+    width: 36px;
+}
+.slider {
+    width: 400px;
+}
+
+button {
+    background-color: #888888; /* gray */
+    margin-bottom:5px;
+    border-color:white;
+    border: 40px;
+    color: white;
+    padding: 5px 15px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 36px;
+}
+.small {
+    font-size:20px;
+    align: center;
+}
