@@ -25,23 +25,6 @@
 
 #include <chrono>
 
-// poor man's semaphore
-class lock_t{
-  static bool locked;
-  public:
-  lock_t() {
-    while(locked) {
-    }
-    locked = true;
-  }
-
-  ~lock_t() {
-    locked = false;
-  }
-};
-
-bool lock_t::locked = false;
-
 // circular buffer, from https://github.com/martinmoene/ring-span-lite
 #include "ring_span.hpp"
 template< typename T, size_t N >
@@ -55,9 +38,9 @@ const int pin_oled_sdl = 15;
 const int pin_oled_rst = 16;
 
 const int pin_strand_1 = 2;
-int led_count = 500;
+int led_count = 50;
 
-String bluetooth_device_name = "bke";
+String bluetooth_device_name = "nerdlights";
 
 SSD1306 display(oled_address, pin_oled_sda, pin_oled_sdl);
 
@@ -82,7 +65,7 @@ strand_t STRANDS[] = {{.rmtChannel = 2,
                        .brightLimit = 24,
                        .numPixels = led_count}};
 const int STRANDCNT = sizeof(STRANDS) / sizeof(STRANDS[0]);
-;
+
 strand_t *strands[8];
 
 // **********************************
@@ -154,12 +137,6 @@ class Command {
 const int wifi_port = 80;
 // const int wifi_max_clients = 1;
 AsyncWebServer server(wifi_port);
-
-struct HttpRoute {
-  String method;
-  String path;
-  std::function<void(WiFiClient &client)> execute;
-};
 
 class WifiTask {
  public:
@@ -245,9 +222,6 @@ class WifiTask {
           current_state = status_awaiting_client;
           if (trace) Serial.println("wifi connected, web server started");
         } else {
-          // if(every_n_ms(last_execute_ms, ms, 1000)) {
-          //   Serial.print(wifi_status);
-          // }
           if (ms - connect_start_ms > 5000) {
             if (trace) Serial.println("couldn't connect, trying again");
             WiFi.disconnect();
@@ -318,12 +292,9 @@ void cmd_status(CommandEnvironment & env) {
 
 // current lighting pattern selected for display
 enum LightMode {
-  mode_rgb,
-  mode_usa,
   mode_explosion,
   mode_pattern1,
   mode_rainbow,
-  mode_green,
   mode_strobe,
   mode_twinkle,
   mode_stripes,
@@ -371,14 +342,7 @@ void cmd_name(CommandEnvironment &env) {
     return;
   }
   String name = env.args.getCmdParam(1);
-  /*
-  for(int i = 0; i < name.length; ++i) {
-    if(name[i] < 'a' || name[i] < 'z') {
-      env.cout.printf("Failed - bluetooth device name must be all lowercase
-  letters"); return;
-    }
-  }
-  */
+
   if (name.length() > 32) {
     env.cout.printf(
         "Failed - bluetooth device name must be 32 or fewer characters");
@@ -412,8 +376,7 @@ void set_saturation(uint8_t new_saturation) {
   preferences.end();
 }
 
-void cmd_rgb(CommandEnvironment &env) { set_light_mode(mode_rgb); }
-void cmd_usa(CommandEnvironment &env) { set_light_mode(mode_usa); }
+
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
@@ -526,9 +489,6 @@ void cmd_saturation(CommandEnvironment &env) {
   set_saturation(new_saturation);
 }
 
-
-
-
 void cmd_add_color(CommandEnvironment &env) {
   if (env.args.getParamCount() != 3) {
     env.cerr.printf("failed - requires three parameters");
@@ -614,17 +574,6 @@ Command *get_command_by_name(const char *command_name) {
 
 using namespace Colors;
 
-#define get_variable_value NULL
-
-// // feeds variables to html
-// String get_variable_value(const String& var) {
-//   if(var == "device_name"){
-//     return bluetooth_device_name;
-//   }
-
-//   return String();
-// }
-
 void setup() {
   // enable file system
   SPIFFS.begin();
@@ -653,9 +602,6 @@ void setup() {
   }
   preferences.end();
 
-
-  preferences.end();
-
   pinMode(pin_oled_rst, OUTPUT);
   delay(100);
 
@@ -679,8 +625,7 @@ void setup() {
   commands.emplace_back(
       Command{"wifi", cmd_set_wifi_config, "set wifi, {ssid} {password}"});
   commands.emplace_back(Command{"enablewifi", cmd_set_enable_wifi, "on/off"});
-  commands.emplace_back(Command{"usa", cmd_usa, "red white and blue"});
-  commands.emplace_back(Command{"rgb", cmd_rgb, "red green and blue lights"});
+
   commands.emplace_back(
       Command{"explosion", cmd_explosion, "colored explosions"});
   commands.emplace_back(
@@ -719,10 +664,6 @@ void setup() {
       Command{"off", cmd_off, "turn lights off, device is still running"});
   commands.emplace_back(
       Command{"on", cmd_on, "turn lights on"});
-
-  // setup the LED strand
-  // strip.begin();
-  // strip.show(); // Initialize all pixels to 'off'
 
   digitalLeds_initDriver();
   for (int i = 0; i < STRANDCNT; i++) {
@@ -887,12 +828,6 @@ uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
   auto g2 = (c2 & 0xff00)>>8;
   auto b2 = c2 & 0xff;
   uint32_t color = strip.Color(r1*part1+r2*part2+0.5, g1*part1+g2*part2+0.5, b1*part1+b2*part2+0.5);
-  /*
-  Serial.print("part2: ");
-  Serial.print(part2);
-  Serial.print(" mixed:");
-  Serial.printlln(color);
-  */
 
   return color;
 }
@@ -914,18 +849,15 @@ void twinkle() {
   };
 
   // static std::deque<blinking_led_t> blinking_leds;
-  static blinking_led_t arr[100];
+  static blinking_led_t arr[1000];
   static nonstd::ring_span<blinking_led_t> blinking_leds( arr, arr + dim(arr), arr, 0);
-
-
-
   
-  // about 50% of the lights are twinkling at any time
+  // about 10% of the lights are twinkling at any time
   float ratio_twinkling = .1;
   uint32_t average_twinkling_count = led_count * ratio_twinkling;
   uint32_t max_twinkling_count = dim(arr);//average_twinkling_count*2;
 
-  // twinkling takes 5 second
+  // twinkling takes 1 second
   uint16_t twinkle_ms = 1000;
   float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
 
@@ -938,7 +870,6 @@ void twinkle() {
     strip.setPixelColor(i, base_color);
   }
   
-
   // remove done LEDS
   while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
     strip.setPixelColor( blinking_leds.front().led_number, base_color );
@@ -978,10 +909,8 @@ void twinkle() {
     auto ms_peak = led.done_ms - twinkle_ms/2.;
     auto from_peak = abs(ms-ms_peak);
     auto level = 1. - from_peak / (twinkle_ms/2);
-    
-    //auto time_left = led.done_ms - ms;
-    //float remaining = (float)time_left / twinkle_ms;
-    //float ratio_twinkle = remaining * remaining;
+ 
+
     uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
     
     strip.setPixelColor( led.led_number, color);
@@ -1039,15 +968,6 @@ void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
   }
 }
 
-void rgb() {
-  repeat({strip.Color(20, 0, 0), strip.Color(0, 20, 0), strip.Color(0, 0, 20)});
-}
-
-void trans() {
-  repeat({light_blue, light_blue, pink, pink, white, white, pink, pink});
-}
-
-void usa() { repeat({red, white, blue}, 5); };
 
 bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms,
                 unsigned long ms) {
@@ -1117,9 +1037,7 @@ void loop() {
 
     if(lights_on) {
       switch (light_mode) {
-        case mode_usa:
-          usa();
-          break;
+
         case mode_rainbow:
           rainbow();
           break;
@@ -1131,12 +1049,6 @@ void loop() {
           break;
         case mode_twinkle:
           twinkle();
-          break;
-        case mode_rgb:
-          rgb();
-          break;
-        case mode_green:
-          repeat({strip.Color(0, 50, 0)});
           break;
         case mode_explosion:
           explosion();
@@ -1164,8 +1076,5 @@ void loop() {
 
   delay(10);
 
-
-  // esp_sleep_enable_timer_wakeup(30000);
-  // esp_light_sleep_start();
   last_loop_ms = loop_ms;
 }
