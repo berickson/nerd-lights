@@ -508,7 +508,7 @@ void cmd_speed(CommandEnvironment &env) {
   }
   if (env.args.getParamCount() == 1) {
     auto new_speed = atof(env.args.getCmdParam(1));
-    if (!(fabs(new_speed) < 10)) {
+    if (!(fabs(new_speed) <= 10)) {
       env.cerr.printf("failed - cycles speed should be less than 10");
       return;
     }
@@ -857,8 +857,17 @@ void rainbow() {
 void strobe() {
   // uses speed and cycles
   auto ms = clock_millis();
-  bool on = fmod(ms * (double)speed, 1000) > 500;
-  auto color = on ? strip.ColorHSV(0,0,brightness): strip.Color(0,0,0);
+  
+  bool multi = current_colors.size() >= 2;
+  
+  int n  = floor( (ms * (double)speed) / 1000.0);
+
+  uint32_t color = black;
+  if(multi) {
+    color = current_colors[n%current_colors.size()];
+  } else {
+    color = (n%2==0)?black:current_colors[0];
+  }
 
    for (int i = 0; i < led_count; ++i) {
     strip.setPixelColor(i, color);
