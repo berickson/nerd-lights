@@ -38,7 +38,7 @@ const int pin_oled_sdl = 15;
 const int pin_oled_rst = 16;
 
 const int pin_strand_1 = 2;
-int led_count = 50;
+int led_count = 500;
 
 String bluetooth_device_name = "nerdlights";
 
@@ -285,6 +285,10 @@ void cmd_status(CommandEnvironment & env) {
   env.cout.println("SSID: "+ wifi_task.ssid);
   env.cout.println("IP Address: " + WiFi.localIP().toString());
   env.cout.print("Bluetooth status: ");
+  env.cout.print("ledcount: ");
+  env.cout.println(led_count);
+  env.cout.print("free bytes: ");
+  env.cout.println(ESP.getFreeHeap());
   env.cout.println(bluetooth.hasClient() ? "connected" : "disconnected");
 
 }
@@ -601,6 +605,7 @@ void setup() {
     Serial.println(key+": "+color);
   }
   preferences.end();
+  preferences.end();
 
   pinMode(pin_oled_rst, OUTPUT);
   delay(100);
@@ -849,7 +854,7 @@ void twinkle() {
   };
 
   // static std::deque<blinking_led_t> blinking_leds;
-  static blinking_led_t arr[1000];
+  static blinking_led_t arr[100];
   static nonstd::ring_span<blinking_led_t> blinking_leds( arr, arr + dim(arr), arr, 0);
   
   // about 10% of the lights are twinkling at any time
@@ -980,10 +985,11 @@ void loop() {
   static unsigned long last_loop_ms = 0;
   unsigned long loop_ms = clock_millis();
 
-  // if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
-  //   Serial.print("loop ");
-  //   Serial.println(loop_count);
-  // }
+
+  if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
+    Serial.print("bytes free: ");
+    Serial.println(ESP.getFreeHeap());
+  }
 
   if (every_n_ms(loop_ms, last_loop_ms, 1)) {
     wifi_task.execute();
