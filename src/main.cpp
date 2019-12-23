@@ -413,21 +413,15 @@ void set_saturation(uint8_t new_saturation) {
 }
 
 void cmd_rgb(CommandEnvironment &env) { set_light_mode(mode_rgb); }
-
 void cmd_usa(CommandEnvironment &env) { set_light_mode(mode_usa); }
-
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
-
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
-
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
-
+void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_color); }
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
-
-void cmd_green(CommandEnvironment &env) { set_light_mode(mode_green); }
 
 std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
 
@@ -454,8 +448,6 @@ void cmd_color(CommandEnvironment &env) {
                   atoi(env.args.getCmdParam(3)));
   current_colors.clear();
   add_color(color);
-  
-  set_light_mode(mode_color);
 }
 
 void cmd_stripes(CommandEnvironment & env) {
@@ -543,7 +535,6 @@ void cmd_add_color(CommandEnvironment &env) {
     return;
   }
 
-  light_mode = mode_color;
   uint32_t color =
       strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
                   atoi(env.args.getCmdParam(3)));
@@ -710,9 +701,9 @@ void setup() {
       Command{"speed", cmd_speed,
               "speed of effect,  1.0 would mean moving entire strip once per "
               "second, 2.0 would do it twice per second"});
-  commands.emplace_back(Command{"green", cmd_green, "solid green color"});
+  commands.emplace_back(Command{"normal", cmd_normal, "colors are repeated through the strand"});
   commands.emplace_back(
-      Command("color", cmd_color, "solid {red} {blue} {green}"));
+      Command("color", cmd_color, "set the first color of the pattern / pallet"));
   commands.emplace_back(
       Command("add", cmd_add_color,
               "adds a color to current pallet {red} {blue} {green}"));

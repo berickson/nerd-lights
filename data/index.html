@@ -20,6 +20,7 @@
         <button onmousedown="power_on()">on</button> <button onmousedown="power_off()">off</button>
 
         <h2>Effects</h2>
+        <button onmousedown="command('normal')">normal</button>
         <button onmousedown="command('rainbow')">rainbow</button>
         <button onmousedown="command('twinkle')">twinkle</button>
         <button onmousedown="command('pattern1')">pattern1</button>
@@ -29,7 +30,7 @@
         <button onmousedown="command('stripes')">stripes</button>
         <button onmousedown="command('strobe')">strobe</button>
 
-        <h2>Set color</h2>
+        <h2>Set first color</h2>
         <color-button r="50" g="35" b="15" name="warm"/>
         <color-button r="50" g="50" b="50" name="snow"/>
         <color-button r="30" g="0" b="0" name="red"/>
@@ -51,8 +52,6 @@
         <color-button r="40" g="30" b="0"  method="add" name="yellow"/>
         <color-button r="0" g="30" b="30"  method="add" name="teal"/>
         <color-button r="0" g="0" b="0"    method="add" name="black"/>
-
-
         <h2>Color Schemes</h2>
         <button onmousedown="command('color 0 70 30\nadd 0 55 45')">aqua</button>
         <button onmousedown="command('color 50 0 0\nadd 30 10 10')">vday</button>
