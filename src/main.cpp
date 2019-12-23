@@ -396,7 +396,7 @@ std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
 void add_color(uint32_t color) {
   current_colors.push_back(color);
   uint16_t color_index = current_colors.size()-1; 
-  String key = "color"+color_index;
+  String key = String("color")+color_index;
 
   preferences.begin("main");
   preferences.putUInt("color_count", current_colors.size());
@@ -599,10 +599,10 @@ void setup() {
   auto color_count = preferences.getUInt("color_count", 1);
   Serial.println((String)"color_count:" + color_count);
   for(int i=0;i<color_count; ++i) {
-    String key = "color"+i;
+    String key = (String)"color"+i;
     uint32_t color = preferences.getUInt(key.c_str(), 0x300000);
     current_colors.push_back(color);
-    Serial.println(key+": "+color);
+    Serial.print(key+": "+color);
   }
   preferences.end();
   preferences.end();
@@ -677,6 +677,9 @@ void setup() {
   }
   digitalLeds_addStrands(strands, STRANDCNT);
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.on("/vector-icon.svg",[](AsyncWebServerRequest*request) {
+    request->send(SPIFFS, "/vector-icon.svg", "image/svg+xml");
+  });
   
 
   server.on(
@@ -986,10 +989,10 @@ void loop() {
   unsigned long loop_ms = clock_millis();
 
 
-  if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
-    Serial.print("bytes free: ");
-    Serial.println(ESP.getFreeHeap());
-  }
+  // if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
+  //   Serial.print("bytes free: ");
+  //   Serial.println(ESP.getFreeHeap());
+  // }
 
   if (every_n_ms(loop_ms, last_loop_ms, 1)) {
     wifi_task.execute();
@@ -1084,3 +1087,4 @@ void loop() {
 
   last_loop_ms = loop_ms;
 }
+
