@@ -261,6 +261,33 @@ uint32_t clock_millis() {
     return ms & 0xffffffff;// millis();
 }
 
+// returns a random double [0,1)
+double frand() {
+  return double(rand()) / (double(RAND_MAX) + 1.0);
+}
+
+template<class T> T clamp(T v, T min, T max) {
+  if (v<min) return min;
+  if (v>max) return max;
+  return v;
+
+}
+
+uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
+  part2 = clamp<float>(part2, 0., 1.);
+  float part1 = 1-part2;
+  auto r1 = (c1 & 0xff0000)>>16;
+  auto g1 = (c1 & 0xff00)>>8;
+  auto b1 = c1 & 0xff;
+  auto r2 = (c2 & 0xff0000)>>16;
+  auto g2 = (c2 & 0xff00)>>8;
+  auto b2 = c2 & 0xff;
+  uint32_t color = (uint32_t(r1*part1+r2*part2+0.5)<<16) + (uint32_t(g1*part1+g2*part2+0.5)<<8) +  (uint32_t(b1*part1+b2*part2+0.5));
+
+  return color;
+}
+
+
 
 ////////////////////////////////
 // define commands
@@ -298,6 +325,7 @@ void cmd_status(CommandEnvironment & env) {
 enum LightMode {
   mode_explosion,
   mode_pattern1,
+  mode_gradient,
   mode_rainbow,
   mode_strobe,
   mode_twinkle,
@@ -383,6 +411,7 @@ void set_saturation(uint8_t new_saturation) {
 
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
+void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
@@ -635,6 +664,8 @@ void setup() {
       Command{"explosion", cmd_explosion, "colored explosions"});
   commands.emplace_back(
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
+  commands.emplace_back(
+      Command{"gradient", cmd_gradient, "gradual blending of chosen colors"});
   commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
   commands.emplace_back(Command{"strobe", cmd_strobe, "flashes whole strand at once"});
   commands.emplace_back(Command{"twinkle", cmd_twinkle, "twinkle random lights"});
@@ -743,6 +774,21 @@ void setup() {
     );
 }  // setup
 
+void gradient() {
+  size_t n_colors =  current_colors.size();
+  double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+  for(int i = 0; i<led_count; ++i) {
+    double v = i/lights_per_division;
+    size_t a = floor(v);
+    size_t b = a+1;
+    uint32_t color_a = current_colors[a%n_colors]; // modulus might be unnecessary, but prevents overflow
+    uint32_t color_b = current_colors[b%n_colors];
+    double part_b = v-a;
+    uint32_t color = mix_colors(color_a, color_b, part_b);
+    strip.setPixelColor(i, color);
+  }
+}
+
 void pattern1() {
   auto ms = clock_millis();
   // strip.clear();
@@ -814,31 +860,6 @@ void strobe() {
   }
 }
 
-// returns a random double [0,1)
-double frand() {
-  return double(rand()) / (double(RAND_MAX) + 1.0);
-}
-
-template<class T> T clamp(T v, T min, T max) {
-  if (v<min) return min;
-  if (v>max) return max;
-  return v;
-
-}
-
-uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
-  part2 = clamp<float>(part2, 0., 1.);
-  float part1 = 1-part2;
-  auto r1 = (c1 & 0xff0000)>>16;
-  auto g1 = (c1 & 0xff00)>>8;
-  auto b1 = c1 & 0xff;
-  auto r2 = (c2 & 0xff0000)>>16;
-  auto g2 = (c2 & 0xff00)>>8;
-  auto b2 = c2 & 0xff;
-  uint32_t color = strip.Color(r1*part1+r2*part2+0.5, g1*part1+g2*part2+0.5, b1*part1+b2*part2+0.5);
-
-  return color;
-}
 
 void twinkle() {
   bool trace = false;
@@ -1024,8 +1045,8 @@ void loop() {
     display.display();
   }
 
+  static LineReader serial_line_reader;
   static LineReader line_reader;
-  static String last_bluetooth_line;
 
   // check for a new line in bluetooth
   if (line_reader.get_line(bluetooth)) {
@@ -1039,8 +1060,23 @@ void loop() {
       bluetooth.print("ERROR: Command not found - ");
       bluetooth.println(parser.getCommand());
     }
-    last_bluetooth_line = line_reader.line;
   }
+
+  // check for a new line in serial
+  // check for a new line in bluetooth
+  if (serial_line_reader.get_line(Serial)) {
+    CmdParser parser;
+    parser.parseCmd((char *)line_reader.line.c_str());
+    Command *command = get_command_by_name(parser.getCommand());
+    if (command) {
+      CommandEnvironment env(parser, Serial, Serial);
+      command->execute(env);
+    } else {
+      Serial.print("ERROR: Command not found - ");
+      Serial.println(parser.getCommand());
+    }
+  }
+
 
   if(every_n_ms(last_loop_ms, loop_ms, 30)) {
 
@@ -1061,6 +1097,9 @@ void loop() {
           break;
         case mode_explosion:
           explosion();
+          break;
+        case mode_gradient:
+          gradient();
           break;
         case mode_pattern1:
           pattern1();
