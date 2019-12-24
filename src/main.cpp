@@ -774,16 +774,30 @@ void setup() {
     );
 }  // setup
 
-void gradient() {
+// returns part of area up tree [0:1] that needs to be lit to cover height  up tree h[0:1]
+double percent_lights_for_percent_up_tree(double h) {
+  return 2*(h-((h*h)/2));
+}
+
+void gradient(bool is_tree = true) {
   size_t n_colors =  current_colors.size();
-  double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+  int divisions = n_colors < 2 ? 1: n_colors -1;
+  int division = 1;
+  double division_start = 0;
+  double percent = (double)division/divisions;
+  double division_end = led_count * is_tree ? percent_lights_for_percent_up_tree(percent) : percent;
+
+  //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
   for(int i = 0; i<led_count; ++i) {
-    double v = i/lights_per_division;
-    size_t a = floor(v);
-    size_t b = a+1;
-    uint32_t color_a = current_colors[a%n_colors]; // modulus might be unnecessary, but prevents overflow
-    uint32_t color_b = current_colors[b%n_colors];
-    double part_b = v-a;
+    if(i>division_end) {
+      ++division;
+      division_start = division_end;
+      percent = (double)division/divisions;
+      division_end = led_count * is_tree ? percent_lights_for_percent_up_tree(percent) : percent;
+    }
+    uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
+    uint32_t color_b = current_colors[(division)%n_colors];
+    double part_b = (i-division_start)/(division_end-division_start);
     uint32_t color = mix_colors(color_a, color_b, part_b);
     strip.setPixelColor(i, color);
   }
@@ -979,13 +993,23 @@ void explosion() {
   }
 }
 
-void stripes(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
+void stripes(std::vector<uint32_t> colors, bool is_tree = true) {
   if(led_count==0) {
     return;
   }
+  Serial.println("stripes");
+  size_t n_color = 0;
+  double ratio_end = (n_color+1.0) / colors.size();
+  double led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
   for (int i = 0; i < led_count; ++i) {
-    int n_color = clamp<int>(i * colors.size() / led_count, 0, colors.size());
-    auto color = colors[n_color];
+    if(i > led_end) {
+      ++n_color;
+      ratio_end = (n_color+1.0) / colors.size();
+      led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
+      Serial.print("led_end: ");
+      Serial.println(led_end);
+    }
+    auto color = colors[clamp<size_t>(n_color,0,colors.size()-1)];
     strip.setPixelColor(i, color);
   }
 }
@@ -1066,7 +1090,7 @@ void loop() {
   // check for a new line in bluetooth
   if (serial_line_reader.get_line(Serial)) {
     CmdParser parser;
-    parser.parseCmd((char *)line_reader.line.c_str());
+    parser.parseCmd((char *)serial_line_reader.line.c_str());
     Command *command = get_command_by_name(parser.getCommand());
     if (command) {
       CommandEnvironment env(parser, Serial, Serial);
