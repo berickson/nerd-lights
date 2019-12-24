@@ -997,7 +997,6 @@ void stripes(std::vector<uint32_t> colors, bool is_tree = true) {
   if(led_count==0) {
     return;
   }
-  Serial.println("stripes");
   size_t n_color = 0;
   double ratio_end = (n_color+1.0) / colors.size();
   double led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
@@ -1006,8 +1005,6 @@ void stripes(std::vector<uint32_t> colors, bool is_tree = true) {
       ++n_color;
       ratio_end = (n_color+1.0) / colors.size();
       led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
-      Serial.print("led_end: ");
-      Serial.println(led_end);
     }
     auto color = colors[clamp<size_t>(n_color,0,colors.size()-1)];
     strip.setPixelColor(i, color);
