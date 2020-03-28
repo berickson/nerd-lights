@@ -157,9 +157,7 @@ class WifiTask {
     status_disabled,
     status_not_connected,
     status_connecting,
-    status_awaiting_client,
-    status_awaiting_command,
-    status_awaiting_header
+    status_awaiting_client
   } current_state = status_disabled;
 
   void set_enable(bool enable_wifi) {
@@ -201,7 +199,6 @@ class WifiTask {
           WiFi.mode(WIFI_AP);
           WiFi.softAP(device_name.c_str(), "password");
           Serial.println("beginning server");
-          Serial.println("IP Address: " + WiFi.softAPIP().toString());
           server.begin();
           Serial.println("IP Address: " + WiFi.softAPIP().toString());
 
