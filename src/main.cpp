@@ -10,11 +10,10 @@
 
 #include "Preferences.h"  // save preferences to non-volatile memory
 
-#include <BluetoothSerial.h>
 #include <CmdParser.hpp>
 
-#include "OLEDDisplay.h"
-#include "SSD1306.h"
+//#include "OLEDDisplay.h"
+#include "SSD1306Wire.h"
 
 #include "SPIFFS.h"
 #include "WiFi.h"
@@ -40,15 +39,15 @@ const int pin_oled_rst = 16;
 const int pin_strand_1 = 2;
 int led_count = 500;
 
-String bluetooth_device_name = "nerdlights";
 
-SSD1306 display(oled_address, pin_oled_sda, pin_oled_sdl);
+SSD1306Wire display(oled_address, pin_oled_sda, pin_oled_sdl);
 
 // globals
-const uint32_t bluetooth_buffer_reserve = 500;
-BluetoothSerial bluetooth;
+String device_name="nerdlights";
 Preferences preferences;
 bool lights_on = true; // true if lights are currently turned on
+bool use_ap_mode = true; // todo: change this depending on whether we can connect
+
 
 
 float speed = 1.0;
@@ -78,7 +77,6 @@ class LineReader {
   const uint32_t buffer_size = 500;
   String buffer;
   String line;
-  // BluetoothSerial bluetoothx
   bool line_available = true;
 
   LineReader() {
@@ -192,51 +190,66 @@ class WifiTask {
 
   void execute() {
     auto ms = millis();
-    auto wifi_status = WiFi.status();
 
     switch (current_state) {
       case status_disabled:
         break;
 
       case status_not_connected:
-        connect_start_ms = ms;
-        WiFi.mode(WIFI_STA);
-        WiFi.setHostname(bluetooth_device_name.c_str());
-        esp_wifi_set_ps(WIFI_PS_NONE);
-        WiFi.begin(ssid.c_str(), password.c_str());
-        current_state = status_connecting;
+        if(use_ap_mode) {
+          Serial.println("starting AP mode");
+          WiFi.mode(WIFI_AP);
+          WiFi.softAP(device_name.c_str(), "password");
+          Serial.println("beginning server");
+          Serial.println("IP Address: " + WiFi.softAPIP().toString());
+          server.begin();
+          Serial.println("IP Address: " + WiFi.softAPIP().toString());
+
+          current_state = status_awaiting_client;
+        } else {
+          connect_start_ms = ms;
+          WiFi.mode(WIFI_STA);
+          WiFi.setHostname(device_name.c_str());
+          esp_wifi_set_ps(WIFI_PS_NONE);
+          WiFi.begin(ssid.c_str(), password.c_str());
+          current_state = status_connecting;
+        }
         break;
 
       case status_connecting:
-        if (wifi_status == WL_CONNECT_FAILED) {
-          current_state = status_not_connected;
-          if (trace) Serial.println("connection failed");
-          current_state = status_not_connected;
-          break;
-        }
-        if (wifi_status == WL_CONNECTED) {
-          Serial.println("IP Address: " + WiFi.localIP().toString());
-          configTime(-8*60*60, -7*60*60, "pool.ntp.org");
-          Serial.println("Got time");
-          server.begin();
-          current_state = status_awaiting_client;
-          if (trace) Serial.println("wifi connected, web server started");
-        } else {
-          if (ms - connect_start_ms > 5000) {
-            if (trace) Serial.println("couldn't connect, trying again");
-            WiFi.disconnect();
+        {
+          auto wifi_status = WiFi.status();
+          if (wifi_status == WL_CONNECT_FAILED) {
             current_state = status_not_connected;
-            break;
+            if (trace) Serial.println("connection failed");
+            current_state = status_not_connected;
+          }
+          else if (wifi_status == WL_CONNECTED) {
+            Serial.println("IP Address: " + WiFi.localIP().toString());
+            configTime(-8*60*60, -7*60*60, "pool.ntp.org");
+            Serial.println("Got time");
+            server.begin();
+            current_state = status_awaiting_client;
+            if (trace) Serial.println("wifi connected, web server started");
+          } else {
+            if (ms - connect_start_ms > 5000) {
+              if (trace) Serial.println("couldn't connect, trying again");
+              WiFi.disconnect();
+              current_state = status_not_connected;
+            }
           }
         }
         break;
 
       case status_awaiting_client:
-        if (wifi_status != WL_CONNECTED) {
-          if (trace) Serial.println("wifi connected, web server stopped");
-          current_state = status_not_connected;
-          server.end();
-          break;
+        if (!use_ap_mode) {
+          auto wifi_status = WiFi.status();
+          if(wifi_status != WL_CONNECTED) {
+            if (trace) Serial.println("wifi connected, web server stopped");
+            current_state = status_not_connected;
+            server.end();
+            break;
+          }
         }
         break;
 
@@ -306,18 +319,17 @@ void cmd_help(CommandEnvironment &env) {
 
 void cmd_status(CommandEnvironment & env) {
   env.cout.print("Device name: ");
-  env.cout.println(bluetooth_device_name);
+  env.cout.println(device_name);
   env.cout.print("The lights are: ");
   env.cout.println(lights_on ? "ON" : "OFF");
   env.cout.println("SSID: "+ wifi_task.ssid);
-  env.cout.println("IP Address: " + WiFi.localIP().toString());
-  env.cout.print("Bluetooth status: ");
+
+  //env.cout.println("IP Address: " + WiFi.localIP().toString());
+  env.cout.println("IP Address: " + WiFi.softAPIP().toString());
   env.cout.print("ledcount: ");
   env.cout.println(led_count);
   env.cout.print("free bytes: ");
   env.cout.println(ESP.getFreeHeap());
-  env.cout.println(bluetooth.hasClient() ? "connected" : "disconnected");
-
 }
 
 
@@ -377,7 +389,7 @@ void cmd_name(CommandEnvironment &env) {
 
   if (name.length() > 32) {
     env.cout.printf(
-        "Failed - bluetooth device name must be 32 or fewer characters");
+        "Failed - device name must be 32 or fewer characters");
     return;
   }
   preferences.begin("main");
@@ -622,7 +634,7 @@ void setup() {
   brightness = preferences.getInt("brightness", 30);
   speed = preferences.getFloat("speed", 1.0);
   cycles = preferences.getFloat("cycles", 1.0);
-  bluetooth_device_name = preferences.getString("bt_name", "ledlights");
+  device_name = preferences.getString("bt_name", "ledlights");
 
   current_colors.clear();
   auto color_count = preferences.getUInt("color_count", 1);
@@ -648,7 +660,6 @@ void setup() {
   // init display before mpu since it initializes shared i2c
   display.init();
   Serial.begin(921600);
-  bluetooth.begin(bluetooth_device_name);
   //
   // set up command interfaces
   commands.reserve(50);
@@ -673,7 +684,7 @@ void setup() {
                                 "set saturation 0-255 for rainbow effect"});
   commands.emplace_back(Command{"brightness", cmd_brightness,
                                 "set brightness 1-255 for rainbow effect"});
-  commands.emplace_back(Command{"name", cmd_name, "set bluetooth device name"});
+  commands.emplace_back(Command{"name", cmd_name, "set device name"});
   commands.emplace_back(Command{
       "cycles", cmd_cycles,
       "the number of times the current pattern will fit on the light strand, "
@@ -1043,11 +1054,11 @@ void loop() {
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
-    display.drawString(0, 0, "bluetooth: " + bluetooth_device_name);
-    display.drawString(0, 10,
-                       bluetooth.hasClient() ? "connected" : "disconnected");
-      display.drawString(0, 20, (String) "SSID: " + wifi_task.ssid);
-      display.drawString(0, 30, WiFi.localIP().toString());
+    display.drawString(0, 0, "name: " + device_name);
+    display.drawString(0, 10, (String) "SSID: " + wifi_task.ssid);
+
+    IPAddress ip_address = use_ap_mode ? WiFi.softAPIP() : WiFi.localIP();
+    display.drawString(0, 20, ip_address.toString());
       
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
@@ -1067,24 +1078,8 @@ void loop() {
   }
 
   static LineReader serial_line_reader;
-  static LineReader line_reader;
-
-  // check for a new line in bluetooth
-  if (line_reader.get_line(bluetooth)) {
-    CmdParser parser;
-    parser.parseCmd((char *)line_reader.line.c_str());
-    Command *command = get_command_by_name(parser.getCommand());
-    if (command) {
-      CommandEnvironment env(parser, bluetooth, bluetooth);
-      command->execute(env);
-    } else {
-      bluetooth.print("ERROR: Command not found - ");
-      bluetooth.println(parser.getCommand());
-    }
-  }
 
   // check for a new line in serial
-  // check for a new line in bluetooth
   if (serial_line_reader.get_line(Serial)) {
     CmdParser parser;
     parser.parseCmd((char *)serial_line_reader.line.c_str());
