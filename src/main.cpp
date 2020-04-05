@@ -1,3 +1,5 @@
+#include "esp32-common.h"
+
 #include <Adafruit_NeoPixel.h>
 #include "math.h"
 #ifdef __AVR__
@@ -6,21 +8,11 @@
 
 #include <vector>
 #include <queue>
-#include "StringStream.h"
-
-#include "Preferences.h"  // save preferences to non-volatile memory
-
-#include <CmdParser.hpp>
 
 //#include "OLEDDisplay.h"
 #include "SSD1306Wire.h"
 
-#include "SPIFFS.h"
-#include "WiFi.h"
-#include "esp_wifi.h"
 #include "time.h"
-// https://github.com/me-no-dev/ESPAsyncWebServer
-#include "ESPAsyncWebServer.h"
 
 #include <chrono>
 
@@ -29,22 +21,13 @@
 template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
 
-// board at https://www.amazon.com/gp/product/B07DKD79Y9
-// oled
-const int oled_address = 0x3c;
-const int pin_oled_sda = 4;
-const int pin_oled_sdl = 15;
-const int pin_oled_rst = 16;
 
 const int pin_strand_1 = 2;
 int led_count = 500;
 
 
-SSD1306Wire display(oled_address, pin_oled_sda, pin_oled_sdl);
-
 // globals
 String device_name="nerdlights";
-Preferences preferences;
 bool lights_on = true; // true if lights are currently turned on
 bool use_ap_mode = true; // todo: change this depending on whether we can connect
 
@@ -66,198 +49,6 @@ strand_t STRANDS[] = {{.rmtChannel = 2,
 const int STRANDCNT = sizeof(STRANDS) / sizeof(STRANDS[0]);
 
 strand_t *strands[8];
-
-// **********************************
-
-//////////////////////////////////////////////////////
-// Command Interface
-
-class LineReader {
- public:
-  const uint32_t buffer_size = 500;
-  String buffer;
-  String line;
-  bool line_available = true;
-
-  LineReader() {
-    buffer.reserve(buffer_size);
-    line.reserve(buffer_size);
-  }
-
-  bool get_line(Stream &stream) {
-    while (stream.available()) {
-      char c = (char)stream.read();
-      if (c == '\n') continue;
-      if (c == '\r') {
-        if (true) {  // buffer.length() > 0) {
-          line = buffer;
-          buffer = "";
-          return true;
-        }
-      } else {
-        buffer.concat(c);
-      }
-    }
-    return false;
-  }
-};
-
-class CommandEnvironment {
- public:
-  CommandEnvironment(CmdParser &args, Stream &cout, Stream &cerr)
-      : args(args), cout(cout), cerr(cerr) {}
-  CmdParser &args;
-  Stream &cout;
-  Stream &cerr;
-  bool ok = true;
-};
-
-typedef void (*CommandCallback)(CommandEnvironment &env);
-
-class Command {
- public:
-  Command() : execute(nullptr) {}
-  Command(const char *name, CommandCallback callback,
-          const char *helpstring = nullptr) {
-    this->name = name;
-    this->execute = callback;
-    this->helpstring = helpstring;
-  }
-  String name;
-  CommandCallback execute;
-  String helpstring;
-};
-
-////////////////////////////////////////////////////
-// WIFI
-////////////////////////////////////////////////////
-
-const int wifi_port = 80;
-// const int wifi_max_clients = 1;
-AsyncWebServer server(wifi_port);
-
-class WifiTask {
- public:
-  LineReader line_reader;
-  WiFiClient client;
-  unsigned long connect_start_ms = 0;
-  unsigned long last_execute_ms = 0;
-  unsigned long last_client_activity_ms = 0;
-  String ssid;
-  String password;
-
-  String method = "";   // GET, PUT, ETC.
-  String path = "";     // URI
-  String version = "";  // HTTP Version
-
-  bool enabled = false;
-  bool trace = true;
-
-  enum {
-    status_disabled,
-    status_not_connected,
-    status_connecting,
-    status_awaiting_client
-  } current_state = status_disabled;
-
-  void set_enable(bool enable_wifi) {
-    if (enable_wifi == this->enabled) return;
-    enabled = enable_wifi;
-    if (enabled) {
-      current_state = status_not_connected;
-    } else {
-      WiFi.disconnect(true, true);
-      current_state = status_disabled;
-    }
-  }
-
-  void set_connection_info(String ssid, String password) {
-    WiFi.disconnect();
-    this->ssid = ssid;
-    this->password = password;
-    if (current_state != status_disabled) {
-      current_state = status_not_connected;
-    }
-
-    Serial.print("connection info set to ssid: ");
-    Serial.print(ssid);
-    Serial.print(" password: ");
-    Serial.print(password);
-    Serial.println();
-  }
-
-  void execute() {
-    auto ms = millis();
-
-    switch (current_state) {
-      case status_disabled:
-        break;
-
-      case status_not_connected:
-        if(use_ap_mode) {
-          Serial.println("starting AP mode");
-          WiFi.mode(WIFI_AP);
-          WiFi.softAP(device_name.c_str(), "password");
-          Serial.println("beginning server");
-          server.begin();
-          Serial.println("IP Address: " + WiFi.softAPIP().toString());
-
-          current_state = status_awaiting_client;
-        } else {
-          connect_start_ms = ms;
-          WiFi.mode(WIFI_STA);
-          WiFi.setHostname(device_name.c_str());
-          esp_wifi_set_ps(WIFI_PS_NONE);
-          WiFi.begin(ssid.c_str(), password.c_str());
-          current_state = status_connecting;
-        }
-        break;
-
-      case status_connecting:
-        {
-          auto wifi_status = WiFi.status();
-          if (wifi_status == WL_CONNECT_FAILED) {
-            current_state = status_not_connected;
-            if (trace) Serial.println("connection failed");
-            current_state = status_not_connected;
-          }
-          else if (wifi_status == WL_CONNECTED) {
-            Serial.println("IP Address: " + WiFi.localIP().toString());
-            configTime(-8*60*60, -7*60*60, "pool.ntp.org");
-            Serial.println("Got time");
-            server.begin();
-            current_state = status_awaiting_client;
-            if (trace) Serial.println("wifi connected, web server started");
-          } else {
-            if (ms - connect_start_ms > 5000) {
-              if (trace) Serial.println("couldn't connect, trying again");
-              WiFi.disconnect();
-              current_state = status_not_connected;
-            }
-          }
-        }
-        break;
-
-      case status_awaiting_client:
-        if (!use_ap_mode) {
-          auto wifi_status = WiFi.status();
-          if(wifi_status != WL_CONNECTED) {
-            if (trace) Serial.println("wifi connected, web server stopped");
-            current_state = status_not_connected;
-            server.end();
-            break;
-          }
-        }
-        break;
-
-      default:
-        Serial.println("invalid sate in WifiTask");
-    }
-    last_execute_ms = ms;
-  }
-};
-
-WifiTask wifi_task;
 
 
 ////////////////////////////////////////////
@@ -302,17 +93,6 @@ uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
 ////////////////////////////////
 // define commands
 ////////////////////////////////
-
-std::vector<Command> commands;
-
-void cmd_help(CommandEnvironment &env) {
-  for (auto command : commands) {
-    env.cout.print(command.name);
-    env.cout.print(": ");
-    env.cout.print(command.helpstring);
-    env.cout.println();
-  }
-}
 
 void cmd_status(CommandEnvironment & env) {
   env.cout.print("Device name: ");
@@ -565,24 +345,6 @@ void cmd_set_led_count(CommandEnvironment &env) {
   env.cout.println(led_count);
 }
 
-void cmd_set_wifi_config(CommandEnvironment &env) {
-  String ssid = env.args.getCmdParam(1);
-  String password = env.args.getCmdParam(2);
-  preferences.begin("main", false);
-  preferences.putString("ssid", ssid);
-  preferences.putString("password", password);
-  preferences.end();
-  preferences.begin("main", true);
-  wifi_task.set_connection_info(ssid, password);
-  env.cout.print("ssid set to \"");
-  env.cout.print(preferences.getString("ssid"));
-  env.cout.print("\", password set to \"");
-  env.cout.print(preferences.getString("password"));
-  env.cout.print("\"");
-  env.cout.println();
-  preferences.end();
-}
-
 void cmd_set_enable_wifi(CommandEnvironment &env) {
   bool enable_wifi = String(env.args.getCmdParam(1)) == "1";
   wifi_task.set_enable(enable_wifi);
@@ -605,25 +367,12 @@ void cmd_previous(CommandEnvironment &env) {
   set_light_mode(mode);
 }
 
-Command *get_command_by_name(const char *command_name) {
-  for (auto &command : commands) {
-    if (command.name == command_name) {
-      return &command;
-    }
-  }
-  return nullptr;
-}
-
 using namespace Colors;
 
 void setup() {
-  // enable file system
-  SPIFFS.begin();
-
+  esp32_common_setup();
   // read preferences
   preferences.begin("main");
-  wifi_task.set_connection_info(preferences.getString("ssid"), preferences.getString("password"));
-  wifi_task.set_enable(true);//preferences.getBool("enable_wifi"));
 
   led_count = preferences.getInt("led_count", 50);
   light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
@@ -643,29 +392,9 @@ void setup() {
     Serial.print(key+": "+color);
   }
   preferences.end();
-  preferences.end();
 
-  pinMode(pin_oled_rst, OUTPUT);
-  delay(100);
-
-  // set up oled
-  digitalWrite(pin_oled_rst, LOW);
-  delay(10);
-  digitalWrite(pin_oled_rst, HIGH);
-  delay(100);
-
-  // init display before mpu since it initializes shared i2c
-  display.init();
-  Serial.begin(921600);
-  //
-  // set up command interfaces
-  commands.reserve(50);
-  commands.emplace_back(
-      Command{"help", cmd_help, "displays list of available commands"});
   commands.emplace_back(
       Command{"status", cmd_status, "displays current device status information"});
-  commands.emplace_back(
-      Command{"wifi", cmd_set_wifi_config, "set wifi, {ssid} {password}"});
   commands.emplace_back(Command{"enablewifi", cmd_set_enable_wifi, "on/off"});
 
   commands.emplace_back(
@@ -1024,12 +753,6 @@ void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
     auto color = colors[(i / repeat_count) % colors.size()];
     strip.setPixelColor(i, color);
   }
-}
-
-
-bool every_n_ms(unsigned long last_loop_ms, unsigned long loop_ms,
-                unsigned long ms) {
-  return (last_loop_ms % ms) + (loop_ms - last_loop_ms) >= ms;
 }
 
 void loop() {
