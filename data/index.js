@@ -67,6 +67,27 @@ function command(s) {
     r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
     r.send(s);
 }
+
+function multi_command(commands) {
+    let s = commands[0];
+    let r = new XMLHttpRequest();
+    r.open("POST", "command")
+    r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+    r.onload = function (e) {
+        if (r.readyState === 4) {
+          if (r.status === 200) {
+            let remaining_commands=commands.slice(1);
+            if(remaining_commands.length > 0) {
+                multi_command(remaining_commands);
+            }
+          } else {
+            alert(r.statusText);
+          }
+        }
+      };    
+    r.send(s);
+}
+
 function power_on() {
     command("on");
 }

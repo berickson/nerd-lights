@@ -13,7 +13,7 @@
                 <rect id="color-box" x=5 y=5 width="70" height="70" rx=15 style="fill:rgb(0,0,0);stroke-width:3;stroke:rgb(150,150,150)" />
             </svg>
             <br>
-            <span class="small" id='label' '></span>
+            <span class="small" id='label'></span>
             </span>
         </template>
         <script src="index.js"></script> 
@@ -27,8 +27,9 @@
         <button onmousedown="command('rainbow')">rainbow</button>
         <button onmousedown="command('twinkle')">twinkle</button>
         <button onmousedown="command('pattern1')">pattern1</button>
-        <button onmousedown="command('color 30 0 0\nadd 200 0 0\nadd 200 15 0\nadd 100 15 0\nadd 200 40 0\ntwinkle')">embers</button>
-        <button onmousedown='command("color 5 5 30\nadd 0 0 255\nadd 0 0 255\nadd 100 100 100\ntwinkle")'>icy</button>
+        <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
+        <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
+        <button onmousedown="multi_command(['color 0 0 0','add 3 3 0','twinkle'])">fireflies</button>
         <button onmousedown="command('explosion')">explosion</button>
         <button onmousedown="command('stripes')">stripes</button>
         <button onmousedown="command('strobe')">strobe</button>
@@ -56,9 +57,9 @@
         <color-button r="0" g="30" b="30"  method="add" name="teal"/>
         <color-button r="0" g="0" b="0"    method="add" name="black"/>
         <h2>Color Schemes</h2>
-        <button onmousedown="command('color 0 70 30\nadd 0 55 45')">aqua</button>
-        <button onmousedown="command('color 50 0 0\nadd 30 10 10')">vday</button>
-        <button onmousedown="command('color 40 2 0\nadd 30 25 0\nadd 3 3 35\nadd 40 10 0\nadd 3 40 3')">match</button>
+        <button onmousedown="multi_command(['color 0 70 30','add 0 55 45'])">aqua</button>
+        <button onmousedown="multi_command(['color 50 0 0','add 30 10 10'])">vday</button>
+        <button onmousedown="multi_command(['color 40 2 0','add 30 25 0','add 3 3 35','add 40 10 0','add 3 40 3'])">match</button>
 
         <h2>Rainbow Config</h2>
         brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>

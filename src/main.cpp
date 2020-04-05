@@ -29,7 +29,7 @@ int led_count = 500;
 // globals
 String device_name="nerdlights";
 bool lights_on = true; // true if lights are currently turned on
-bool use_ap_mode = true; // todo: change this depending on whether we can connect
+bool use_ap_mode = false; // todo: change this depending on whether we can connect
 
 
 
