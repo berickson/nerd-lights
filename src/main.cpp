@@ -522,7 +522,7 @@ void gradient(bool is_tree = true) {
   int division = 1;
   double division_start = 0;
   double percent = (double)division/divisions;
-  double division_end = led_count * is_tree ? percent_lights_for_percent_up_tree(percent) : percent;
+  double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
 
   //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
   for(int i = 0; i<led_count; ++i) {
