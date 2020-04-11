@@ -157,6 +157,9 @@ uint32_t red = strip.Color(20, 0, 0);
 uint32_t blue = strip.Color(0, 0, 20);
 };  // namespace Colors
 
+std::vector<uint32_t> unscaled_colors = {strip.Color(15, 15, 15)};
+std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
+
 void cmd_name(CommandEnvironment &env) {
   if (env.args.getParamCount() != 1) {
     env.cout.printf("Failed - requires a single parameter for name");
@@ -175,6 +178,38 @@ void cmd_name(CommandEnvironment &env) {
   esp_restart();
 }
 
+inline uint8_t mul_div(uint8_t number, uint8_t numerator, uint8_t denominator) {
+    int32_t ret = number;
+    ret *= numerator;
+    ret /= denominator;
+    return (uint8_t) ret;
+}
+
+void calculate_scaled_colors() {
+  uint8_t max_c = 0;
+  // calculate max of all components
+  pixelColor_t p;
+  for(auto & c : unscaled_colors){
+    p.num = c;
+
+    max_c = max(max_c, p.r);
+    max_c = max(max_c, p.g);
+    max_c = max(max_c, p.b);
+  }
+
+  current_colors.clear();
+  for(auto & c : unscaled_colors){
+    p.num = c;
+    if(max_c > 0) {
+      p.r = mul_div(p.r, brightness, max_c);
+      p.g = mul_div(p.g, brightness, max_c);
+      p.b = mul_div(p.b, brightness, max_c);
+    }
+    current_colors.push_back(p.num);
+  }
+}
+
+
 void set_light_mode(LightMode mode) {
   lights_on = true;
   light_mode = mode;
@@ -188,6 +223,7 @@ void set_brightness(uint8_t new_brightness) {
   preferences.begin("main");
   preferences.putInt("brightness", new_brightness);
   preferences.end();
+  calculate_scaled_colors();
 }
 
 void set_saturation(uint8_t new_saturation) {
@@ -208,18 +244,18 @@ void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_color); }
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
 
-std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
 
 
 void add_color(uint32_t color) {
-  current_colors.push_back(color);
-  uint16_t color_index = current_colors.size()-1; 
+  unscaled_colors.push_back(color);
+  uint16_t color_index = unscaled_colors.size()-1; 
   String key = String("color")+color_index;
 
   preferences.begin("main");
-  preferences.putUInt("color_count", current_colors.size());
-  preferences.putUInt(key.c_str(), current_colors[color_index]);
+  preferences.putUInt("color_count", unscaled_colors.size());
+  preferences.putUInt(key.c_str(), unscaled_colors[color_index]);
   preferences.end();
+  calculate_scaled_colors();
 }
 
 void cmd_color(CommandEnvironment &env) {
@@ -231,7 +267,7 @@ void cmd_color(CommandEnvironment &env) {
   uint32_t color =
       strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
                   atoi(env.args.getCmdParam(3)));
-  current_colors.clear();
+  unscaled_colors.clear();
   add_color(color);
 }
 
@@ -392,6 +428,7 @@ void setup() {
     Serial.print(key+": "+color);
   }
   preferences.end();
+  calculate_scaled_colors();
 
   commands.emplace_back(
       Command{"status", cmd_status, "displays current device status information"});
@@ -611,6 +648,17 @@ void strobe() {
   }
 }
 
+uint32_t color_at_brightness( uint32_t color , uint8_t new_brightness) {
+  pixelColor_t c;
+  c.num = color;
+  uint32_t max_c = max<uint8_t>(max<uint8_t>(c.r,c.g),c.b);
+  if(max_c > 0) {
+    c.r = mul_div(c.r, new_brightness, max_c);
+    c.g = mul_div(c.g, new_brightness, max_c);
+    c.b = mul_div(c.b, new_brightness, max_c);
+  }
+  return c.num;
+}
 
 void twinkle() {
   bool trace = false;
@@ -698,6 +746,8 @@ void twinkle() {
   if(trace) Serial.println("done twinkle");
 }
 
+
+
 void off() { strip.clear(); }
 
 void explosion() {
@@ -718,7 +768,7 @@ void explosion() {
   }
   uint16_t radius_in_leds =
       (uint64_t)max_radius_in_leds * elapsed_ms / explosion_ms;
-  int intensity = (uint64_t)100 * (max_radius_in_leds - radius_in_leds) *
+  int intensity = (uint64_t)brightness * (max_radius_in_leds - radius_in_leds) *
                   (max_radius_in_leds - radius_in_leds) /
                   (max_radius_in_leds * max_radius_in_leds);
   for (int i = 0; i < led_count; ++i) {
