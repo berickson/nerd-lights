@@ -101,8 +101,8 @@ void cmd_status(CommandEnvironment & env) {
   env.cout.println(lights_on ? "ON" : "OFF");
   env.cout.println("SSID: "+ wifi_task.ssid);
 
-  //env.cout.println("IP Address: " + WiFi.localIP().toString());
-  env.cout.println("IP Address: " + WiFi.softAPIP().toString());
+  env.cout.println("IP Address: " + WiFi.localIP().toString());
+  //env.cout.println("IP Address: " + WiFi.softAPIP().toString());
   env.cout.print("ledcount: ");
   env.cout.println(led_count);
   env.cout.print("free bytes: ");
@@ -418,13 +418,13 @@ void setup() {
   cycles = preferences.getFloat("cycles", 1.0);
   device_name = preferences.getString("bt_name", "ledlights");
 
-  current_colors.clear();
+  unscaled_colors.clear();
   auto color_count = preferences.getUInt("color_count", 1);
   Serial.println((String)"color_count:" + color_count);
   for(int i=0;i<color_count; ++i) {
     String key = (String)"color"+i;
     uint32_t color = preferences.getUInt(key.c_str(), 0x300000);
-    current_colors.push_back(color);
+    unscaled_colors.push_back(color);
     Serial.print(key+": "+color);
   }
   preferences.end();
@@ -582,33 +582,57 @@ void pattern1() {
   // strip.clear();
   // step through the LEDS, and update the colors as needed
   for (int i = 0; i < led_count; i++) {
-    int r = 0, g = 0, b = 0;
-    r += 8;
-    g += 5;
-    b += 2;
-    if ((ms / 1000) % led_count == i) {
-      r += 50;
-      g += 50;
-      b += 50;
+    pixelColor_t  c;
+    c.num = current_colors[0];
+    // use ints to allow overflow, will clamp at end
+    int r = c.r;
+    int g = c.g;
+    int b = c.b;
+    if (current_colors.size() >= 2 && (ms / 1000) % led_count == i) {
+      c.num = current_colors[1];
+      r += c.r;
+      g += c.g;
+      b += c.b;
     }
 
-    if ((ms / 20) % led_count == i) {
-      r += 50;
-      g += 50;
-      b += 50;
+    if (current_colors.size() >= 3 && (ms / 20) % led_count == i) {
+      c.num = current_colors[2];
+      r += c.r;
+      g += c.g;
+      b += c.b;
     }
-    if ((ms / 30) % led_count == i) {
-      r += 50;
+    if (current_colors.size() >= 4 && (ms / 30) % led_count == i) {
+      c.num = current_colors[3];
+      r += c.r;
+      g += c.g;
+      b += c.b;
     }
-    if ((ms / 40) % led_count == i) {
-      g += 50;
+    if (current_colors.size() >= 5 && (ms / 40) % led_count == i) {
+      c.num = current_colors[4];
+      r += c.r;
+      g += c.g;
+      b += c.b;
     }
-    if ((ms / 35) % led_count == led_count - i) {
-      r += 50;
-      b += 50;
+    if (current_colors.size() >= 6 && (ms / 35) % led_count == led_count - i) {
+      c.num = current_colors[5];
+      r += c.r;
+      g += c.g;
+      b += c.b;
     }
 
-    strip.setPixelColor(i, r, g, b);
+    // clamp colors to 255 while maintaining hue
+    int max_c = max(r,max(g,b));
+    if(max_c > 255) {
+      c.r = r * 255. / max_c;
+      c.g = g * 255. / max_c;
+      c.b = b * 255. / max_c;
+    } else {
+      c.r = r;
+      c.g = g;
+      c.b = b;
+    }
+
+    strip.setPixelColor(i, c.num);
   }
 }
 
@@ -812,14 +836,7 @@ void loop() {
   unsigned long loop_ms = clock_millis();
 
 
-  // if (every_n_ms(last_loop_ms, loop_ms, 1000)) {
-  //   Serial.print("bytes free: ");
-  //   Serial.println(ESP.getFreeHeap());
-  // }
-
-  if (every_n_ms(loop_ms, last_loop_ms, 1)) {
-    wifi_task.execute();
-  }
+  esp32_common_loop();
   
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
