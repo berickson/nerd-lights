@@ -23,7 +23,8 @@ inline size_t dim( T (&arr)[N] ) { return N; }
 
 
 const int pin_strand_1 = 2;
-int led_count = 500;
+int led_count = 50;
+int max_current = 500;
 
 
 // globals
@@ -105,6 +106,8 @@ void cmd_status(CommandEnvironment & env) {
   //env.cout.println("IP Address: " + WiFi.softAPIP().toString());
   env.cout.print("ledcount: ");
   env.cout.println(led_count);
+  env.cout.print("max_current: ");
+  env.cout.println(max_current);
   env.cout.print("free bytes: ");
   env.cout.println(ESP.getFreeHeap());
 }
@@ -178,7 +181,7 @@ void cmd_name(CommandEnvironment &env) {
   esp_restart();
 }
 
-inline uint8_t mul_div(uint8_t number, uint8_t numerator, uint8_t denominator) {
+inline uint8_t mul_div(uint8_t number, uint32_t numerator, uint32_t denominator) {
     int32_t ret = number;
     ret *= numerator;
     ret /= denominator;
@@ -381,6 +384,26 @@ void cmd_set_led_count(CommandEnvironment &env) {
   env.cout.println(led_count);
 }
 
+void cmd_set_max_current(CommandEnvironment &env) {
+  if (env.args.getParamCount() > 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  if (env.args.getParamCount() == 1) {
+    auto v = atoi(env.args.getCmdParam(1));
+    if (v < 200) {
+      env.cerr.printf("failed - max current must be greater than 200 ma");
+      return;
+    }
+    max_current = v;
+    preferences.begin("main");
+    preferences.putInt("max_current", max_current);
+    preferences.end();
+  }
+  env.cout.print("max_current = ");
+  env.cout.println(max_current);
+}
+
 void cmd_set_enable_wifi(CommandEnvironment &env) {
   bool enable_wifi = String(env.args.getCmdParam(1)) == "1";
   wifi_task.set_enable(enable_wifi);
@@ -411,6 +434,7 @@ void setup() {
   preferences.begin("main");
 
   led_count = preferences.getInt("led_count", 50);
+  max_current = preferences.getInt("max_current", 500);
   light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
   saturation = preferences.getInt("saturation", 200);
   brightness = preferences.getInt("brightness", 30);
@@ -468,6 +492,8 @@ void setup() {
   commands.emplace_back(Command("ledcount", cmd_set_led_count,
                                 "sets the total number of leds on the strand"));
   commands.emplace_back(Command{"next", cmd_next, "cycles to the next mode"});
+
+  commands.emplace_back(Command{"max_current", cmd_set_max_current, "sets maximum current draw in mA"});
   commands.emplace_back(
       Command{"previous", cmd_previous, "cycles to the previous mode"});
   commands.emplace_back(
@@ -913,6 +939,30 @@ void loop() {
       }
     } else {
       off();
+    }
+
+    // enforce current limit
+    {
+      const int base_current = 180; // mA with nothing turned on
+      int max_sum_rgb = (max_current-base_current) * 50 / 3;
+      int sum_rgb = 0;
+      for (uint16_t i = 0; i < strip.numPixels(); i++) {
+        pixelColor_t p;
+        p.num = strip.getPixelColor(i);
+        sum_rgb += p.r + p.g + p.b;
+      }
+      if(sum_rgb > max_sum_rgb) {
+        for (uint16_t i = 0; i < strip.numPixels(); i++) {
+          pixelColor_t p;
+          p.num = strip.getPixelColor(i);
+          p.r = mul_div(p.r, max_sum_rgb, sum_rgb);
+          p.g = mul_div(p.g, max_sum_rgb, sum_rgb);
+          p.b = mul_div(p.b, max_sum_rgb, sum_rgb);
+          strip.setPixelColor(i, p.num);
+        }
+        strip.setPixelColor(0,red);
+        
+      }
     }
       
     for (uint16_t i = 0; i < strip.numPixels(); i++) {
