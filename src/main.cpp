@@ -22,15 +22,16 @@ template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
 
 
-const int pin_strand_1 = 2;
-int led_count = 50;
-int max_current = 500;
 
 
 // globals
+const int pin_strand_1 = 2;
+int led_count = 50;
+int max_current = 500;
 String device_name="nerdlights";
 bool lights_on = true; // true if lights are currently turned on
 bool use_ap_mode = false; // todo: change this depending on whether we can connect
+bool is_tree = false;
 
 
 
@@ -362,6 +363,22 @@ void cmd_add_color(CommandEnvironment &env) {
   add_color(color);
 }
 
+void cmd_set_tree_mode(CommandEnvironment &env) {
+  if (env.args.getParamCount() > 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  if (env.args.getParamCount() == 1) {
+    auto v = atoi(env.args.getCmdParam(1));
+    is_tree = (v == 1);
+    preferences.begin("main");
+    preferences.putBool("is_tree", is_tree);
+    preferences.end();
+  }
+  env.cout.print("is_tree: ");
+  env.cout.println(is_tree);
+}
+
 void cmd_set_led_count(CommandEnvironment &env) {
   if (env.args.getParamCount() > 1) {
     env.cerr.printf("failed - requires one parameter");
@@ -433,6 +450,7 @@ void setup() {
   // read preferences
   preferences.begin("main");
 
+  is_tree = preferences.getBool("is_tree", false);
   led_count = preferences.getInt("led_count", 50);
   max_current = preferences.getInt("max_current", 500);
   light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
@@ -480,6 +498,7 @@ void setup() {
       Command{"speed", cmd_speed,
               "speed of effect,  1.0 would mean moving entire strip once per "
               "second, 2.0 would do it twice per second"});
+  commands.emplace_back(Command{"is_tree", cmd_set_tree_mode, "set to true if lights are on a tree, makes stripes same width bottom to top"});
   commands.emplace_back(Command{"normal", cmd_normal, "colors are repeated through the strand"});
   commands.emplace_back(
       Command("color", cmd_color, "set the first color of the pattern / pallet"));
@@ -830,7 +849,7 @@ void explosion() {
   }
 }
 
-void stripes(std::vector<uint32_t> colors, bool is_tree = true) {
+void stripes(std::vector<uint32_t> colors, bool is_tree = false) {
   if(led_count==0) {
     return;
   }
@@ -919,7 +938,7 @@ void loop() {
           strobe();
           break;
         case mode_stripes:
-          stripes(current_colors);
+          stripes(current_colors, is_tree);
           break;
         case mode_twinkle:
           twinkle();
@@ -928,7 +947,7 @@ void loop() {
           explosion();
           break;
         case mode_gradient:
-          gradient(false);
+          gradient(is_tree);
           break;
         case mode_pattern1:
           pattern1();
