@@ -26,7 +26,7 @@ inline size_t dim( T (&arr)[N] ) { return N; }
 
 // globals
 const int pin_strand_1 = 2;
-int led_count = 50;
+int led_count = 10;
 int max_current = 500;
 String device_name="nerdlights";
 bool lights_on = true; // true if lights are currently turned on
@@ -452,6 +452,8 @@ void setup() {
 
   is_tree = preferences.getBool("is_tree", false);
   led_count = preferences.getInt("led_count", 50);
+  STRANDS[0].numPixels = led_count;
+  strip.updateLength(led_count);
   max_current = preferences.getInt("max_current", 500);
   light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
   saturation = preferences.getInt("saturation", 200);
@@ -694,6 +696,25 @@ void rainbow() {
     uint16_t hue = fmod((i + offset) * ratio, 0xffff);  // 0-0xffff
     auto color = strip.ColorHSV(hue, saturation, brightness);
     strip.setPixelColor(i, color);
+  }
+}
+
+void rotate() {
+  auto ms = clock_millis();
+  double offset = -1.0 * speed * ms / 1000. * led_count;
+  std::vector<uint32_t> strip_copy;
+  strip_copy.resize(led_count);
+  for( int i = 0; i < led_count; ++i) {
+    strip_copy[i] = strip.getPixelColor(i);
+  }
+  for( int i = 0; i < strip.numPixels(); ++i) {
+
+    float f_pos = fmod(fabs(i+offset), led_count);
+    int i_temp = floor(f_pos);
+    int i_temp2 = i_temp + 1;
+    if(i_temp2 >= led_count) i_temp2 = 0;
+    float part_2 = f_pos - i_temp;
+    strip.setPixelColor(i, mix_colors(strip_copy[i_temp], strip_copy[i_temp2], part_2));
   }
 }
 
@@ -958,6 +979,11 @@ void loop() {
       }
     } else {
       off();
+    }
+
+    // rotate
+    if(light_mode != mode_rainbow ) {
+      rotate();
     }
 
     // enforce current limit

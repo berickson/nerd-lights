@@ -110,8 +110,8 @@ function cycles_change() {
 
 function speed_input() {
     let speed_p = parseInt(document.getElementById("speed").value);
-    let speed = log_scale(speed_p, 1, 100, 0.01, 10);
-    let speed_str = speed.toFixed(2);
+    let speed = (speed_p == 0 )? 0 : log_scale(speed_p, 1, 100, 0.001, 1);
+    let speed_str = speed.toFixed(3);
     document.getElementById('speed_value').innerHTML = speed_str;
 }
 
