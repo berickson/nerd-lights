@@ -581,7 +581,7 @@ double percent_lights_for_percent_up_tree(double h) {
 
 void gradient(bool is_tree = true) {
   size_t n_colors =  current_colors.size();
-  int divisions = n_colors < 2 ? 1: n_colors -1;
+  int divisions = (n_colors < 2) ? 1: n_colors -1;
   int division = 1;
   double division_start = 0;
   double percent = (double)division/divisions;
@@ -593,7 +593,7 @@ void gradient(bool is_tree = true) {
       ++division;
       division_start = division_end;
       percent = (double)division/divisions;
-      division_end = led_count * is_tree ? percent_lights_for_percent_up_tree(percent) : percent;
+      division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
     }
     uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
     uint32_t color_b = current_colors[(division)%n_colors];
@@ -928,7 +928,7 @@ void loop() {
           explosion();
           break;
         case mode_gradient:
-          gradient();
+          gradient(false);
           break;
         case mode_pattern1:
           pattern1();
