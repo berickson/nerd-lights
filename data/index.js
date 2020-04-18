@@ -141,3 +141,9 @@ function saturation_change() {
     let v = document.getElementById('saturation_value').innerHTML
     command("saturation "+ v);
 }
+
+function on_network_connect_click() {
+    let ssid = document.getElementById('network_ssid').value;
+    let password = document.getElementById('network_password').value;
+    command('set_wifi_config '+ssid+' '+password);
+}
