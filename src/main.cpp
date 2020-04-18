@@ -528,7 +528,8 @@ void setup() {
     strands[i] = &STRANDS[i];
   }
   digitalLeds_addStrands(strands, STRANDCNT);
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setFilter(ON_STA_FILTER);
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index-ap.html").setFilter(ON_AP_FILTER);
   server.on("/vector-icon.svg",[](AsyncWebServerRequest*request) {
     request->send(SPIFFS, "/vector-icon.svg", "image/svg+xml");
   });
