@@ -28,14 +28,41 @@ customElements.define('color-button',
             this.querySelector("#label").innerText = this.getAttribute('name');
             //this.innerText = "";
             
-            this.querySelector("#color-box").addEventListener("mousedown", function() {
+            let press_timer = null;
+
+            function on_down() {
                 let color = String(r)+" "+g+" "+b;
                 if(method=="add") {
                     command("add " + color);
                 } else {
                     command("color " + color);
                 }
-            });
+                console.log('timout set');
+                press_timer = setTimeout(function() { 
+                    command("color " + color);
+                    console.log('timout fired');
+                }, 1000);
+            }
+
+            function on_up() {
+                if(press_timer != null) {
+                    clearTimeout(press_timer);
+                    press_timer = null;
+                    console.log('timout cleared');
+                }
+            }
+
+
+
+
+
+            this.querySelector("#color-box").addEventListener("mousedown", on_down);
+            this.querySelector("#color-box").addEventListener("touchstart", on_down);
+            this.querySelector("#color-box").addEventListener("touchend", on_up);
+            this.querySelector("#color-box").addEventListener("mouseup", on_up);
+
+
+
             // e.addEventListener("mousedown", function() {
             //     set_color(String(r)+" "+g+" "+b);
             // });
