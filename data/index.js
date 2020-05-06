@@ -31,6 +31,9 @@ customElements.define('color-button',
             let press_timer = null;
 
             function on_down() {
+                if(press_timer!=null) {
+                    return;
+                }
                 let color = String(r)+" "+g+" "+b;
                 if(method=="add") {
                     command("add " + color);
@@ -41,6 +44,7 @@ customElements.define('color-button',
                 press_timer = setTimeout(function() { 
                     command("color " + color);
                     console.log('timout fired');
+                    press_timer = null;
                 }, 1000);
             }
 
@@ -55,11 +59,9 @@ customElements.define('color-button',
 
 
 
-
-            this.querySelector("#color-box").addEventListener("mousedown", on_down);
-            this.querySelector("#color-box").addEventListener("touchstart", on_down);
-            this.querySelector("#color-box").addEventListener("touchend", on_up);
-            this.querySelector("#color-box").addEventListener("mouseup", on_up);
+            let is_touch_device = 'ontouchstart' in document.documentElement;
+            this.querySelector("#color-box").addEventListener(is_touch_device ? "touchstart" : "mousedown", on_down);
+            this.querySelector("#color-box").addEventListener(is_touch_device ? "touchend" : "mouseup", on_up);
 
 
 
