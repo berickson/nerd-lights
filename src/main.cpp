@@ -30,7 +30,6 @@ int led_count = 10;
 int max_current = 500;
 String device_name="nerdlights";
 bool lights_on = true; // true if lights are currently turned on
-bool use_ap_mode = false; // todo: change this depending on whether we can connect
 bool is_tree = false;
 
 
@@ -909,9 +908,12 @@ void loop() {
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
     display.drawString(0, 0, "name: " + device_name);
-    display.drawString(0, 10, (String) "SSID: " + wifi_task.ssid);
+    
+    String ssid = WiFi.isConnected() ? wifi_task.ssid : "nerdlights";
+    display.drawString(0, 10, (String) "SSID: " + ssid);
+    
 
-    IPAddress ip_address = use_ap_mode ? WiFi.softAPIP() : WiFi.localIP();
+    IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
     display.drawString(0, 20, ip_address.toString());
       
     struct tm timeinfo;
