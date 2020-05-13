@@ -442,6 +442,21 @@ void cmd_previous(CommandEnvironment &env) {
   set_light_mode(mode);
 }
 
+void cmd_scan_networks(CommandEnvironment & env) {
+
+  int n = WiFi.scanNetworks();
+  env.cout.print(R"({"networks":[)");
+  for (int i = 0; i < n; ++i) {
+    if(i>0) {
+      env.cout.print(",");
+    }
+    env.cout.println();
+    env.cout.printf(R"({"ssid": "%s", "rssi": %d, "encryption":%d})",WiFi.SSID(i).c_str(), WiFi.RSSI(i), (int)WiFi.encryptionType(i));
+  }
+  env.cout.println("]}");
+}
+
+
 using namespace Colors;
 
 void setup() {
@@ -520,6 +535,11 @@ void setup() {
       Command{"off", cmd_off, "turn lights off, device is still running"});
   commands.emplace_back(
       Command{"on", cmd_on, "turn lights on"});
+
+  commands.emplace_back(
+    Command{"scan_networks", cmd_scan_networks, "returns json describing network status"});
+
+
 
   digitalLeds_initDriver();
   for (int i = 0; i < STRANDCNT; i++) {

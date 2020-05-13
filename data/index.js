@@ -172,7 +172,49 @@ function saturation_change() {
 }
 
 function on_network_connect_click() {
-    let ssid = document.getElementById('network_ssid').value;
+    let ssid = get_selected_ssid();
     let password = document.getElementById('network_password').value;
     command('set_wifi_config '+ssid+' '+password);
 }
+
+function scan_networks() {
+    let r = new XMLHttpRequest();
+    r.open("POST", "command");
+    r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+    r.onload = function (e) {
+        let networks = JSON.parse(r.response).networks
+        populate_network_list(networks);
+    };
+    r.send("scan_networks");
+    
+}
+
+function populate_network_list(networks) {
+    let select_element = document.createElement('select')
+    select_element.id = 'network_select'
+    let added = new Set()
+  
+    for(let i=0;i<networks.length; ++i) {
+      let ssid = networks[i].ssid;
+      if(added.has(ssid)) continue;
+      added.add(ssid)
+      let option_element = document.createElement('option');
+      option_element.value = ssid;
+      option_element.innerText = ssid;
+      select_element.appendChild(option_element);
+    }
+    document.getElementById("networks").appendChild(select_element)
+  }
+  
+function get_selected_ssid() {
+    // get ssid
+    let ssid = "";
+    if( document.getElementById("picker_button").checked ) {
+      let e = document.getElementById('network_select');
+      ssid = e.options[e.selectedIndex].value;
+    } else {
+      ssid = document.getElementById('custom_value').value;
+    }
+    return ssid;
+}
+  
