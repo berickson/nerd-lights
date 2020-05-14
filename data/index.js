@@ -18,7 +18,7 @@ customElements.define('color-button',
 
 
             // get full colors to use on screen
-            let v = Math.max(r,g,b)
+            let v = 50.;//Math.max(r,g,b)
             let screen_r = v == 0 ? r : r*255/v;
             let screen_g = v == 0 ? g : g*255/v;
             let screen_b = v == 0 ? b : b*255/v;
@@ -36,16 +36,14 @@ customElements.define('color-button',
                 }
                 let color = String(r)+" "+g+" "+b;
                 if(method=="add") {
-                    command("add " + color);
-                } else {
-                    command("color " + color);
+                    command("add " + color, update_status);
+
+                    press_timer = setTimeout(function() { 
+                        command("color " + color, update_status);
+                        console.log('timout fired');
+                        press_timer = null;
+                    }, 1000);
                 }
-                console.log('timout set');
-                press_timer = setTimeout(function() { 
-                    command("color " + color);
-                    console.log('timout fired');
-                    press_timer = null;
-                }, 1000);
             }
 
             function on_up() {
@@ -75,13 +73,24 @@ customElements.define('color-button',
 
 function log_scale(p, minp=0, maxp=100, min=0.1, max=10) {
     // The result should be between min and max
-    var minv = Math.log(min);
-    var maxv = Math.log(max);
+    let minv = Math.log(min);
+    let maxv = Math.log(max);
 
     // calculate adjustment factor
-    var scale = (maxv-minv) / (maxp-minp);
+    let scale = (maxv-minv) / (maxp-minp);
 
     return Math.exp(minv + scale*(p-minp));
+}
+
+function inverse_log_scale(v, minp=0, maxp=100, min=0.1, max=10) {
+    // The result should be between min and max
+    let minv = Math.log(min);
+    let maxv = Math.log(max);
+
+    // calculate adjustment factor
+    let scale = (maxv-minv) / (maxp-minp);
+    let p = (Math.log(v)-minv)/scale + minp;
+    return p
 }
 
 function set_color(c) {
@@ -90,14 +99,17 @@ function set_color(c) {
     command(cmd);
 }
 
-function command(s) {
+function command(s, onload = null) {
     let r = new XMLHttpRequest();
     r.open("POST", "command");
     r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+    if(onload!=null) {
+        r.onload = onload;
+    }
     r.send(s);
 }
 
-function multi_command(commands) {
+function multi_command(commands, onload = null) {
     let s = commands[0];
     let r = new XMLHttpRequest();
     r.open("POST", "command")
@@ -108,6 +120,8 @@ function multi_command(commands) {
             let remaining_commands=commands.slice(1);
             if(remaining_commands.length > 0) {
                 multi_command(remaining_commands);
+            } else {
+                update_status();
             }
           } else {
             alert(r.statusText);
@@ -137,6 +151,11 @@ function cycles_change() {
     command("cycles "+ v);
 }
 
+function update_cycles(v) {
+    document.getElementById("cycles").value = inverse_log_scale(v, 1, 100, 0.01, 10);
+    document.getElementById('cycles_value').innerHTML = v;
+}
+
 function speed_input() {
     let speed_p = parseInt(document.getElementById("speed").value);
     let speed = (speed_p == 0 )? 0 : log_scale(speed_p, 1, 100, 0.001, 1);
@@ -147,6 +166,11 @@ function speed_input() {
 function speed_change() {
     let v = document.getElementById('speed_value').innerHTML
     command("speed "+ v);
+}
+
+function update_speed(v) {
+    document.getElementById('speed_value').innerHTML = v.toString();
+    document.getElementById("speed").value = inverse_log_scale(v, 1, 100, 0.001, 1);
 }
 
 function brightness_input() {
@@ -160,6 +184,11 @@ function brightness_change() {
     command("brightness "+ v);
 }
 
+function update_brightness(v) {
+    document.getElementById("brightness").value
+    document.getElementById('brightness_value').innerHTML = v.toString();
+}
+
 function saturation_input() {
     let saturation = parseInt(document.getElementById("saturation").value);
     let saturation_str = String(saturation);
@@ -169,6 +198,38 @@ function saturation_input() {
 function saturation_change() {
     let v = document.getElementById('saturation_value').innerHTML
     command("saturation "+ v);
+}
+
+function update_saturation(v) {
+    document.getElementById("saturation").value = v
+    document.getElementById('saturation_value').innerHTML = v.toString();
+}
+
+
+
+function on_status_update(e) {
+    let status = JSON.parse(e.target.response);
+    let colors = status.colors;
+    let colors_div = document.getElementById("current-colors");
+    colors_div.innerHTML = "";
+    for(let i=0; i<colors.length; ++i) {
+        let color = colors[i];
+        let button = document.createElement("color-button");
+        button.setAttribute("r",color.r)
+        button.setAttribute("g",color.g)
+        button.setAttribute("b",color.b)
+        //button.setAttribute("name",i.toString())
+        button.name = i.toString();
+        colors_div.appendChild(button);
+    }
+    update_speed(status.speed);
+    update_brightness(status.brightness);
+    update_cycles(status.cycles);
+    update_saturation(status.saturation);
+}
+
+function update_status() {
+    command("status", on_status_update);
 }
 
 function on_network_connect_click() {

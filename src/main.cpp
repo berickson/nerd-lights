@@ -24,7 +24,7 @@ inline size_t dim( T (&arr)[N] ) { return N; }
 
 typedef union {
   struct __attribute__ ((packed)) {
-    uint8_t w, b, r, g;
+    uint8_t b, g, r, w;
   };
   uint32_t num;
 } Color;
@@ -200,13 +200,17 @@ void cmd_status(CommandEnvironment & env) {
   o.print(brightness);
   o.println(",");
 
+  o.print("\"cycles\":");
+  o.print(cycles);
+  o.println(",");
+
   o.print("\"saturation\":");
   o.print(saturation);
   o.println(",");
 
-  o.print("\"speed\":\"");
-  o.print(speed);
-  o.println("\",");
+  o.print("\"speed\":");
+  o.print(speed,4);
+  o.println(",");
 
   o.print("\"lights_on\":");
   o.print(lights_on ? "true" : "false");

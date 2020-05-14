@@ -34,6 +34,9 @@
         <button onmousedown="command('stripes')">stripes</button>
         <button onmousedown="command('strobe')">strobe</button>
 
+        <h2>Current Colors</h2>
+        <div id="current-colors"></div>
+
         <h2>Colors</h2>
         <color-button r="60" g="35" b="8" method="add" name="warm"/>
         <color-button r="50" g="50" b="50" method="add" name="snow"/>
@@ -58,4 +61,7 @@
 
         <h2><a href='command_line.html'>Command Line</a></h2>
     </body>
+    <script>
+        update_status();
+    </script>
 </html>
