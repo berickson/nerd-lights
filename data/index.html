@@ -16,6 +16,7 @@
             <span class="small" id='label'></span>
             </span>
         </template>
+        <script src="iro-5-1-8-min.js"></script>
         <script src="index.js"></script> 
 
         <h1>Nerd Lights</h1>
@@ -36,6 +37,25 @@
 
         <h2>Current Colors</h2>
         <div id="current-colors"></div>
+
+        <div id="picker-modal-dialog" class="modal">
+            <div class=modal-content>
+                <div class="modal-header">
+                <!--<span class="close">&times;</span>-->
+                <!--<h2>Modal Header</h2>-->
+                </div>
+                <div class="modal-body">
+                    <div id="color-picker"></div>
+                </div>
+                <!--
+                <div class="modal-footer">
+                <h3>Modal Footer</h3>
+                </div>
+                -->
+            </div>
+          </div>
+        </div>
+
 
         <h2>Colors</h2>
         <color-button r="60" g="35" b="8" method="add" name="warm"/>
@@ -63,5 +83,8 @@
     </body>
     <script>
         update_status();
+        var colorPicker = new iro.ColorPicker('#color-picker');
+
+
     </script>
 </html>

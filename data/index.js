@@ -1,4 +1,6 @@
 var the_element;
+let is_touch_device = 'ontouchstart' in document.documentElement;
+
 customElements.define('color-button',
     class extends HTMLElement {
         constructor() {
@@ -44,6 +46,25 @@ customElements.define('color-button',
                         press_timer = null;
                     }, 1000);
                 }
+                if(method=="pick") {
+                    let modal = document.getElementById("picker-modal-dialog");
+                    modal.style.display = "block"; // show color picker
+
+                    // When the user clicks on <span> (x), close the modal
+                    //let close_button = modal.getElementsByClassName("close")[0];
+                    //close_button.onclick = function () {
+                        //modal.style.display = "none";
+                    //}
+
+                    // When the user clicks anywhere outside of the modal, close it
+                    window.addEventListener(is_touch_device ? "touchstart" : "mousedown", 
+                        function (event) {
+                            if (event.target == modal) {
+                                modal.style.display = "none";
+                            }
+                        }
+                    )
+                }
             }
 
             function on_up() {
@@ -57,7 +78,6 @@ customElements.define('color-button',
 
 
 
-            let is_touch_device = 'ontouchstart' in document.documentElement;
             this.querySelector("#color-box").addEventListener(is_touch_device ? "touchstart" : "mousedown", on_down);
             this.querySelector("#color-box").addEventListener(is_touch_device ? "touchend" : "mouseup", on_up);
 
@@ -218,6 +238,7 @@ function on_status_update(e) {
         button.setAttribute("r",color.r)
         button.setAttribute("g",color.g)
         button.setAttribute("b",color.b)
+        button.setAttribute("method", "pick")
         //button.setAttribute("name",i.toString())
         button.name = i.toString();
         colors_div.appendChild(button);
