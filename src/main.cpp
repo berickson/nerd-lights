@@ -22,6 +22,13 @@ template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
 
 
+typedef union {
+  struct __attribute__ ((packed)) {
+    uint8_t w, b, r, g;
+  };
+  uint32_t num;
+} Color;
+
 
 
 // globals
@@ -91,28 +98,6 @@ uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
 
 
 
-////////////////////////////////
-// define commands
-////////////////////////////////
-
-void cmd_status(CommandEnvironment & env) {
-  env.cout.print("Device name: ");
-  env.cout.println(device_name);
-  env.cout.print("The lights are: ");
-  env.cout.println(lights_on ? "ON" : "OFF");
-  env.cout.println("SSID: "+ wifi_task.ssid);
-
-  env.cout.println("IP Address: " + WiFi.localIP().toString());
-  //env.cout.println("IP Address: " + WiFi.softAPIP().toString());
-  env.cout.print("ledcount: ");
-  env.cout.println(led_count);
-  env.cout.print("max_current: ");
-  env.cout.println(max_current);
-  env.cout.print("free bytes: ");
-  env.cout.println(ESP.getFreeHeap());
-}
-
-
 // current lighting pattern selected for display
 enum LightMode {
   mode_explosion,
@@ -163,6 +148,117 @@ uint32_t blue = strip.Color(0, 0, 20);
 std::vector<uint32_t> unscaled_colors = {strip.Color(15, 15, 15)};
 std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
 
+////////////////////////////////
+// define commands
+////////////////////////////////
+
+
+const char * light_mode_name(LightMode mode) {
+  switch (mode) {
+    case mode_explosion:
+      return "explosion";
+    
+    case mode_pattern1:
+      return "pattern1";
+
+    case mode_gradient:
+      return "gradient";
+
+    case mode_rainbow:
+      return "rainbow";
+
+    case mode_strobe:
+      return "strobe";
+
+    case mode_twinkle:
+      return "twinkle";
+
+    case mode_stripes:
+      return "strips";
+
+    case mode_color:
+      return "normal";
+  }
+  return "mode_not_found";
+}
+
+void cmd_status(CommandEnvironment & env) {
+  Stream & o = env.cout;
+
+  o.println("{");
+
+  o.print("\"device_name\":\"");
+  o.print(device_name);
+  o.println("\",");
+
+
+  o.print("\"light_mode\":\"");
+  o.print(light_mode_name(light_mode));
+  o.println("\",");
+
+  o.print("\"brightness\":");
+  o.print(brightness);
+  o.println(",");
+
+  o.print("\"saturation\":");
+  o.print(saturation);
+  o.println(",");
+
+  o.print("\"speed\":\"");
+  o.print(speed);
+  o.println("\",");
+
+  o.print("\"lights_on\":");
+  o.print(lights_on ? "true" : "false");
+  o.println(",");
+
+  o.print("\"ssid\":\"");
+  o.print(wifi_task.ssid);
+  o.println("\",");
+
+  o.print("\"ip_address\":\"");
+  o.print(WiFi.localIP().toString());
+  o.println("\",");
+
+  o.print("\"led_count\":");
+  o.print(led_count);
+  o.println(",");
+
+  o.print("\"max_current\":");
+  o.print(max_current);
+  o.println(",");
+
+  o.print("\"bytes_free\":");
+  o.print(ESP.getFreeHeap());
+  o.println(",");
+
+  o.print("\"colors\":[");
+  for(uint32_t i = 0; i < unscaled_colors.size(); ++i) {
+    if(i > 0) {
+      o.print(", ");
+    }
+    Color p;
+    p.num = unscaled_colors[i];
+    o.print("{");
+    o.print("\"r\":");
+    o.print(p.r);
+    o.print(",");
+
+
+    o.print("\"g\":");
+    o.print(p.g);
+
+    o.print(",\"b\":");
+    o.print(p.b);
+    o.print("}");
+
+  }
+  o.println("]");
+
+  o.println("}");
+}
+
+
 void cmd_name(CommandEnvironment &env) {
   if (env.args.getParamCount() != 1) {
     env.cout.printf("Failed - requires a single parameter for name");
@@ -191,7 +287,7 @@ inline uint8_t mul_div(uint8_t number, uint32_t numerator, uint32_t denominator)
 void calculate_scaled_colors() {
   uint8_t max_c = 0;
   // calculate max of all components
-  pixelColor_t p;
+  Color p;
   for(auto & c : unscaled_colors){
     p.num = c;
 
