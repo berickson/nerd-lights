@@ -189,7 +189,7 @@ function speed_change() {
 
 function update_speed(v) {
     document.getElementById('speed_value').innerHTML = v.toString();
-    document.getElementById("speed").value = inverse_log_scale(v, 1, 100, 0.001, 1);
+    document.getElementById("speed").value = (v==0) ? 0 : inverse_log_scale(v, 1, 100, 0.001, 1);
 }
 
 function brightness_input() {
