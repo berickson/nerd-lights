@@ -53,6 +53,7 @@ customElements.define('color-button',
                         me.setAttribute('r', color.rgb.r)
                         me.setAttribute('g', color.rgb.g)
                         me.setAttribute('b', color.rgb.b)
+                        command("color "+color.rgb.r+" "+color.rgb.g+" "+color.rgb.b)
                       });
 
                     // When the user clicks anywhere outside of the modal, close it
@@ -111,12 +112,6 @@ function inverse_log_scale(v, minp=0, maxp=100, min=0.1, max=10) {
     let scale = (maxv-minv) / (maxp-minp);
     let p = (Math.log(v)-minv)/scale + minp;
     return p
-}
-
-function set_color(c) {
-    let add_checked = document.getElementById('add_checkbox').checked;
-    let cmd = (add_checked ? "add " : "color ") + c;
-    command(cmd);
 }
 
 function command(s, onload = null) {

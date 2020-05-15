@@ -362,16 +362,19 @@ void add_color(uint32_t color) {
 }
 
 void cmd_color(CommandEnvironment &env) {
-  if (env.args.getParamCount() != 3) {
-    env.cerr.printf("failed - requires three parameters");
+  auto n_params = env.args.getParamCount();
+  if (n_params == 0 || n_params %3  != 0) {
+    env.cerr.printf("failed - requires three parameters per color");
     return;
   }
 
-  uint32_t color =
-      strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
-                  atoi(env.args.getCmdParam(3)));
   unscaled_colors.clear();
-  add_color(color);
+  for(int i = 0; i < n_params/3; ++i) {
+    uint32_t color =
+        strip.Color(atoi(env.args.getCmdParam(i*3+1)), atoi(env.args.getCmdParam(i*3+2)),
+                    atoi(env.args.getCmdParam(i*3+3)));
+    add_color(color);
+  }
 }
 
 void cmd_stripes(CommandEnvironment & env) {
