@@ -1,4 +1,3 @@
-var the_element;
 let is_touch_device = 'ontouchstart' in document.documentElement;
 
 customElements.define('color-button',
@@ -6,11 +5,11 @@ customElements.define('color-button',
         constructor() {
             super();
             this.template = document.getElementById('color-button');
-            the_element = this;
         }
 
         // using connected compenent instead of shadow dom so styles can be inheritd
         connectedCallback() {
+            let me = this;
             let e=document.importNode(this.template.content, true);
             this.appendChild(e);
             let r = this.getAttribute('r');
@@ -19,13 +18,9 @@ customElements.define('color-button',
             let method = this.getAttribute('method');
 
 
-            // get full colors to use on screen
-            let v = 50.;//Math.max(r,g,b)
-            let screen_r = v == 0 ? r : r*255/v;
-            let screen_g = v == 0 ? g : g*255/v;
-            let screen_b = v == 0 ? b : b*255/v;
-            let screen_color = 'rgb('+screen_r+","+screen_g+","+screen_b+')';
-            this.querySelector("#color-box").style.fill=screen_color;
+
+            let rgb_color = 'rgb('+r+","+g+","+b+')';
+            this.querySelector("#color-box").style.fill=rgb_color;
             let t = this.innerText;
             this.querySelector("#label").innerText = this.getAttribute('name');
             //this.innerText = "";
@@ -47,20 +42,24 @@ customElements.define('color-button',
                     }, 1000);
                 }
                 if(method=="pick") {
+                    color_picker.color.rgbString = rgb_color;
                     let modal = document.getElementById("picker-modal-dialog");
                     modal.style.display = "block"; // show color picker
-
-                    // When the user clicks on <span> (x), close the modal
-                    //let close_button = modal.getElementsByClassName("close")[0];
-                    //close_button.onclick = function () {
-                        //modal.style.display = "none";
-                    //}
+                    let color_box = me.querySelector("#color-box");
+                    color_picker.off('color:change');
+                    color_picker.on('color:change', function(color) {
+                        color_box.style.fill=color.hexString;
+                        me.setAttribute('r', color.rgb.r)
+                        me.setAttribute('g', color.rgb.g)
+                        me.setAttribute('b', color.rgb.b)
+                      });
 
                     // When the user clicks anywhere outside of the modal, close it
                     window.addEventListener(is_touch_device ? "touchstart" : "mousedown", 
                         function (event) {
                             if (event.target == modal) {
                                 modal.style.display = "none";
+                                color_picker.off('color:change');
                             }
                         }
                     )

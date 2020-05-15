@@ -30,7 +30,7 @@
         <button onmousedown="command('pattern1')">pattern1</button>
         <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
         <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
-        <button onmousedown="multi_command(['color 0 0 0','add 30 30 0','twinkle'])">fireflies</button>
+        <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
         <button onmousedown="command('explosion')">explosion</button>
         <button onmousedown="command('stripes')">stripes</button>
         <button onmousedown="command('strobe')">strobe</button>
@@ -58,20 +58,20 @@
 
 
         <h2>Colors</h2>
-        <color-button r="60" g="35" b="8" method="add" name="warm"/>
-        <color-button r="50" g="50" b="50" method="add" name="snow"/>
-        <color-button r="30" g="0" b="0"   method="add" name="red"/>
-        <color-button r="60" g="20" b="20" method="add" name="pink"/>
-        <color-button r="0" g="30" b="0"   method="add" name="green"/>
-        <color-button r="0" g="0" b="30"   method="add" name="blue"/>
-        <color-button r="30" g="0" b="30"  method="add" name="purple"/>
-        <color-button r="40" g="30" b="0"  method="add" name="yellow"/>
-        <color-button r="0" g="30" b="30"  method="add" name="teal"/>
+        <color-button r="255" g="138" b="34" method="add" name="warm"/>
+        <color-button r="255" g="255" b="255" method="add" name="snow"/>
+        <color-button r="255" g="0" b="0"   method="add" name="red"/>
+        <color-button r="255" g="85" b="85" method="add" name="pink"/>
+        <color-button r="0" g="255" b="0"   method="add" name="green"/>
+        <color-button r="0" g="0" b="255"   method="add" name="blue"/>
+        <color-button r="255" g="0" b="255"  method="add" name="purple"/>
+        <color-button r="255" g="191" b="0"  method="add" name="yellow"/>
+        <color-button r="0" g="255" b="255"  method="add" name="teal"/>
         <color-button r="0" g="0" b="0"    method="add" name="black"/>
         <h2>Color Schemes</h2>
-        <button onmousedown="multi_command(['color 0 70 30','add 0 55 45'])">aqua</button>
-        <button onmousedown="multi_command(['color 50 0 0','add 30 10 10'])">vday</button>
-        <button onmousedown="multi_command(['color 40 2 0','add 30 25 0','add 3 3 35','add 40 10 0','add 3 40 3'])">match</button>
+        <button onmousedown="multi_command(['color 0 255 109','add 0 200 163'])">aqua</button>
+        <button onmousedown="multi_command(['color 255 0 0','add 153 51 51'])">vday</button>
+        <button onmousedown="multi_command(['color 255 13 0','add 191 159 0','add 19 19 223','add 255 64 0','add 19 255 19'])">match</button>
 
         <h2>Tweaks</h2>
         brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>
@@ -83,7 +83,7 @@
     </body>
     <script>
         update_status();
-        var colorPicker = new iro.ColorPicker('#color-picker');
+        var color_picker = new iro.ColorPicker('#color-picker');
 
 
     </script>
