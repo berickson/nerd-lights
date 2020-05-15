@@ -19,8 +19,8 @@ customElements.define('color-button',
 
 
 
-            let rgb_color = 'rgb('+r+","+g+","+b+')';
-            this.querySelector("#color-box").style.fill=rgb_color;
+            let rgb_string = 'rgb('+r+","+g+","+b+')';
+            this.querySelector("#color-box").style.fill=rgb_string;
             let t = this.innerText;
             this.querySelector("#label").innerText = this.getAttribute('name');
             //this.innerText = "";
@@ -42,13 +42,14 @@ customElements.define('color-button',
                     }, 1000);
                 }
                 if(method=="pick") {
-                    color_picker.color.rgbString = rgb_color;
+                    color_picker.color.rgbString = rgb_string;
                     let modal = document.getElementById("picker-modal-dialog");
                     modal.style.display = "block"; // show color picker
                     let color_box = me.querySelector("#color-box");
                     color_picker.off('color:change');
                     color_picker.on('color:change', function(color) {
-                        color_box.style.fill=color.hexString;
+                        rgb_string = color.rgbString;
+                        color_box.style.fill=rgb_string;
                         me.setAttribute('r', color.rgb.r)
                         me.setAttribute('g', color.rgb.g)
                         me.setAttribute('b', color.rgb.b)
