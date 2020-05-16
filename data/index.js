@@ -53,7 +53,17 @@ customElements.define('color-button',
                         me.setAttribute('r', color.rgb.r)
                         me.setAttribute('g', color.rgb.g)
                         me.setAttribute('b', color.rgb.b)
-                        command("color "+color.rgb.r+" "+color.rgb.g+" "+color.rgb.b)
+
+                        let buttons = document.getElementById('current-colors').querySelectorAll('color-button');
+                        let command_string = "color";
+                        for(let i = 0; i < buttons.length; ++i) {
+                            let button = buttons[i];
+                            let r = button.getAttribute('r')
+                            let g = button.getAttribute('g')
+                            let b = button.getAttribute('b')
+                            command_string += " "+r+" "+g+" "+b;
+                        }
+                        command(command_string);
                       });
 
                     // When the user clicks anywhere outside of the modal, close it
