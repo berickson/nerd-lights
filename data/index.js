@@ -16,6 +16,7 @@ customElements.define('color-button',
             let g = this.getAttribute('g');
             let b = this.getAttribute('b');
             let method = this.getAttribute('method');
+            let color_pending = false;
 
 
 
@@ -46,8 +47,12 @@ customElements.define('color-button',
                     let modal = document.getElementById("picker-modal-dialog");
                     modal.style.display = "block"; // show color picker
                     let color_box = me.querySelector("#color-box");
-                    color_picker.off('color:change');
-                    color_picker.on('color:change', function(color) {
+
+                    // the input:end event is called when acolor is picked
+                    // tried color:change before, but frequent updates caused 
+                    // too much flickering
+                    color_picker.off('input:end'); 
+                    color_picker.on('input:end', function(color) {
                         rgb_string = color.rgbString;
                         color_box.style.fill=rgb_string;
                         me.setAttribute('r', color.rgb.r)
@@ -63,7 +68,10 @@ customElements.define('color-button',
                             let b = button.getAttribute('b')
                             command_string += " "+r+" "+g+" "+b;
                         }
-                        command(command_string);
+                        if(color_pending == false) {
+                            color_pending = true;
+                            command(command_string, function () {color_pending = false});
+                        }
                       });
 
                     // When the user clicks anywhere outside of the modal, close it
@@ -157,11 +165,11 @@ function multi_command(commands, onload = null) {
 }
 
 function power_on() {
-    command("on");
+    command("on", update_status);
 }
 
 function power_off() {
-    command("off");
+    command("off", update_status);
 }
 
 function cycles_input() {
@@ -252,6 +260,18 @@ function on_status_update(e) {
     update_brightness(status.brightness);
     update_cycles(status.cycles);
     update_saturation(status.saturation);
+
+    document.getElementById("on_button").setAttribute("active", status.lights_on);
+    document.getElementById("off_button").setAttribute("active", !status.lights_on);
+    document.getElementById("normal_button").setAttribute("active", status.light_mode == "normal");
+    document.getElementById("gradient_button").setAttribute("active", status.light_mode == "gradient");
+    document.getElementById("rainbow_button").setAttribute("active", status.light_mode == "rainbow");
+    document.getElementById("twinkle_button").setAttribute("active", status.light_mode == "twinkle");
+    document.getElementById("pattern1_button").setAttribute("active", status.light_mode == "pattern1");
+    document.getElementById("explosion_button").setAttribute("active", status.light_mode == "explosion");
+    document.getElementById("stripes_button").setAttribute("active", status.light_mode == "stripes");
+    document.getElementById("strobe_button").setAttribute("active", status.light_mode == "strobe");
+
 }
 
 function update_status() {

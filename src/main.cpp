@@ -22,12 +22,29 @@ template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
 
 
-typedef union {
-  struct __attribute__ ((packed)) {
-    uint8_t b, g, r, w;
-  };
-  uint32_t num;
-} Color;
+union Color {
+    Color() {
+        num = 0;
+    }
+    Color(int32_t c) {
+        num = c;
+    }
+    Color(uint8_t r, uint8_t b, uint8_t g) {
+        this->r = r;
+        this->b = b;
+        this->g = g;
+    }
+    operator uint32_t() {
+        return num;
+    }
+    struct __attribute__ ((packed)){
+        uint8_t b; 
+        uint8_t g;
+        uint8_t r; 
+        uint8_t w;
+    };
+    uint32_t num;
+};
 
 
 
@@ -174,7 +191,7 @@ const char * light_mode_name(LightMode mode) {
       return "twinkle";
 
     case mode_stripes:
-      return "strips";
+      return "stripes";
 
     case mode_color:
       return "normal";

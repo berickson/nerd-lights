@@ -16,24 +16,28 @@
             <span class="small" id='label'></span>
             </span>
         </template>
+        <!-- 
+            see https://iro.js.org/colorPicker_api.html 
+        -->
         <script src="iro-5-1-8-min.js"></script>
+
         <script src="index.js"></script> 
 
         <h1>Nerd Lights</h1>
-        <button onmousedown="power_on()">on</button> <button onmousedown="power_off()">off</button>
+        <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button>
 
         <h2>Effects</h2>
-        <button onmousedown="command('normal')">normal</button>
-        <button onmousedown="command('gradient')">gradient</button>
-        <button onmousedown="command('rainbow')">rainbow</button>
-        <button onmousedown="command('twinkle')">twinkle</button>
-        <button onmousedown="command('pattern1')">pattern1</button>
+        <button id="normal_button" onmousedown="command('normal', update_status)">normal</button>
+        <button id="gradient_button" onmousedown="command('gradient', update_status)">gradient</button>
+        <button id="rainbow_button" onmousedown="command('rainbow', update_status)">rainbow</button>
+        <button id="twinkle_button" onmousedown="command('twinkle', update_status)">twinkle</button>
+        <button id="pattern1_button" onmousedown="command('pattern1', update_status)">pattern1</button>
         <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
         <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
         <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
-        <button onmousedown="command('explosion')">explosion</button>
-        <button onmousedown="command('stripes')">stripes</button>
-        <button onmousedown="command('strobe')">strobe</button>
+        <button id="explosion_button" onmousedown="command('explosion', update_status)">explosion</button>
+        <button id="stripes_button" onmousedown="command('stripes', update_status)">stripes</button>
+        <button id="strobe_button" onmousedown="command('strobe', update_status)">strobe</button>
 
         <h2>Current Colors</h2>
         <div id="current-colors"></div>
