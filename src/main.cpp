@@ -49,7 +49,7 @@ union Color {
 
 
 // globals
-const int pin_strand_1 = 2;
+const int pin_strand_1 = 5 ;
 int led_count = 10;
 int max_current = 500;
 String device_name="nerdlights";
