@@ -18,9 +18,12 @@
 
 // circular buffer, from https://github.com/martinmoene/ring-span-lite
 #include "ring_span.hpp"
+
+#define ARDIUNOJSON_TAB "  "
+#include <ArduinoJson.h>
+
 template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
-
 
 union Color {
     Color() {
@@ -199,6 +202,36 @@ const char * light_mode_name(LightMode mode) {
   return "mode_not_found";
 }
 
+
+void cmd_get_program(CommandEnvironment & env) {
+  Stream & o = env.cout;
+  const int doc_capacity = 2000;
+  StaticJsonDocument<doc_capacity> doc;
+  doc["light_mode"]=light_mode;
+  doc["brightness"]=brightness;
+  doc["saturation"]=saturation;
+  doc["cycles"]=cycles;
+  doc["speed"]=speed;
+
+  JsonArray colors_array = doc.createNestedArray("colors");
+  for (int i = 0; i < unscaled_colors.size();++i) {
+    Color c;
+    c.num = unscaled_colors[i];
+    auto color_json = colors_array.createNestedObject();
+    color_json["r"]=c.r;
+    color_json["g"]=c.g;
+    color_json["b"]=c.b;
+  }
+  serializeJsonPretty(doc, o);
+  // print memory usage
+  env.cerr.println();
+  env.cerr.print("used bytes:");
+  env.cerr.print(doc.memoryUsage());
+  env.cerr.print("/");
+  env.cerr.print(doc_capacity);
+  env.cerr.println();
+}
+
 void cmd_status(CommandEnvironment & env) {
   Stream & o = env.cout;
 
@@ -353,6 +386,100 @@ void set_saturation(uint8_t new_saturation) {
   preferences.end();
 }
 
+void set_cycles(float new_cycles) {
+    if (new_cycles < 0.0001 || new_cycles > 1000) {
+      Serial.println("invalid cycle value");
+      return;
+    }
+    cycles = new_cycles;
+    preferences.begin("main");
+    preferences.putFloat("cycles", cycles);
+    preferences.end();
+}
+
+void set_speed(float new_speed) {
+  if(fabs(new_speed) > 10 ) {
+    Serial.println("invalid speed");
+  }
+  speed = new_speed;
+  preferences.begin("main");
+  preferences.putFloat("speed", speed);
+  preferences.end();
+
+}
+
+void add_color(uint32_t color) {
+  unscaled_colors.push_back(color);
+  uint16_t color_index = unscaled_colors.size()-1; 
+  String key = String("color")+color_index;
+
+  preferences.begin("main");
+  preferences.putUInt("color_count", unscaled_colors.size());
+  preferences.putUInt(key.c_str(), unscaled_colors[color_index]);
+  preferences.end();
+  calculate_scaled_colors();
+}
+
+void set_program(JsonDocument & doc) {
+  auto new_light_mode = doc["light_mode"];
+  if(new_light_mode.is<int>()) {
+    set_light_mode((LightMode)new_light_mode.as<int>());
+  }
+
+  auto new_brightness = doc["brightness"];
+  if(new_brightness.is<float>()) {
+    set_brightness(new_brightness.as<float>());
+  }
+
+  auto new_saturation = doc["saturation"];
+  if(new_brightness.is<int>()) {
+    set_saturation(new_saturation.as<int>());
+  }
+
+  auto new_cycles = doc["cycles"];
+  if(new_cycles.is<float>()) {
+    set_cycles(new_cycles.as<float>());
+  }
+
+  auto new_speed = doc["speed"];
+  if(new_speed.is<float>()) {
+    set_speed(new_speed.as<float>());
+  }
+
+  auto new_colors = doc["colors"].as<JsonArray>();
+  if(!new_colors.isNull() && new_colors.size() > 0) {
+    unscaled_colors.clear();
+    for(JsonObject o : new_colors) {
+      Color c;
+      c.r = o["r"]; // will default to zero if doesn't exist
+      c.g = o["g"]; // will default to zero if doesn't exist
+      c.b = o["b"]; // will default to zero if doesn't exist
+      add_color(c);
+    }
+  }
+}
+
+void cmd_set_program(CommandEnvironment & env) {
+  if (env.args.getParamCount() != 1) {
+    env.cout.printf("Failed - requires a single parameter for json document without whitespace");
+    return;
+  }
+
+  const int doc_capacity = 2000;
+  StaticJsonDocument<doc_capacity> doc;
+  String doc_string = env.args.getCmdParam(1);
+  auto error = deserializeJson(doc, doc_string);
+
+  if(error) {
+    env.cerr.println("could not parse json");
+    env.cerr.println(doc_string);
+    env.cerr.println(error.c_str());
+  } else {
+    set_program(doc);
+
+    serializeJsonPretty(doc, env.cout);
+  }
+}
 
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
@@ -366,17 +493,7 @@ void cmd_on(CommandEnvironment &env) { lights_on = true; }
 
 
 
-void add_color(uint32_t color) {
-  unscaled_colors.push_back(color);
-  uint16_t color_index = unscaled_colors.size()-1; 
-  String key = String("color")+color_index;
 
-  preferences.begin("main");
-  preferences.putUInt("color_count", unscaled_colors.size());
-  preferences.putUInt(key.c_str(), unscaled_colors[color_index]);
-  preferences.end();
-  calculate_scaled_colors();
-}
 
 void cmd_color(CommandEnvironment &env) {
   auto n_params = env.args.getParamCount();
@@ -417,6 +534,8 @@ void cmd_brightness(CommandEnvironment &env) {
   }
 }
 
+
+
 void cmd_cycles(CommandEnvironment &env) {
   if (env.args.getParamCount() > 1) {
     env.cerr.printf("failed - requires one parameter");
@@ -428,10 +547,7 @@ void cmd_cycles(CommandEnvironment &env) {
       env.cerr.printf("failed - cycles should be between 0.0001 and 1000");
       return;
     }
-    cycles = new_cycles;
-    preferences.begin("main");
-    preferences.putFloat("cycles", cycles);
-    preferences.end();
+    set_cycles(new_cycles);
   }
   env.cout.print("cycles = ");
   env.cout.println(cycles);
@@ -448,10 +564,7 @@ void cmd_speed(CommandEnvironment &env) {
       env.cerr.printf("failed - cycles speed should be less than 10");
       return;
     }
-    speed = new_speed;
-    preferences.begin("main");
-    preferences.putFloat("speed", speed);
-    preferences.end();
+    set_speed(new_speed);
   }
   env.cout.print("speed = ");
   env.cout.println(speed);
@@ -659,6 +772,12 @@ void setup() {
   commands.emplace_back(
     Command{"scan_networks", cmd_scan_networks, "returns json describing network status"});
 
+  commands.emplace_back(
+    Command{"get_program", cmd_get_program, "returns json for the current program"});
+
+  commands.emplace_back(
+    Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
+
 
 
   digitalLeds_initDriver();
@@ -687,6 +806,7 @@ void setup() {
         AsyncWebParameter* p = request->getParam(i);
         if(p->isPost() && p->name() == "body") {
           CmdParser parser;
+          parser.setOptIgnoreQuote();
           String body = p->value();
 
           int32_t n_start = 0;
@@ -1078,6 +1198,8 @@ void loop() {
   // check for a new line in serial
   if (serial_line_reader.get_line(Serial)) {
     CmdParser parser;
+    parser.setOptIgnoreQuote();
+
     parser.parseCmd((char *)serial_line_reader.line.c_str());
     Command *command = get_command_by_name(parser.getCommand());
     if (command) {

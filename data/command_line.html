@@ -13,6 +13,9 @@
   
     background-color: rgb(30, 30, 30);
   }
+  pre {
+    display:inline
+  }
 
   .results {
     position: absolute;
@@ -104,9 +107,12 @@
         time_div.classList.add('time_text');
         time_div.innerText = time_string();
         var result_div = document.createElement('div');
+        var pre_div = document.createElement('pre');
         result_div.classList.add('result_text');
-        result_div.innerText = msg;
+        pre_div.innerText = msg;
+        //result_div.innerText = result_div.innerText.replace(" ", "&nbsp");
         line_div.append(time_div);
+        result_div.appendChild(pre_div);
         line_div.append(result_div);
         results.append(line_div);
         results.scrollTop = results.scrollHeight;
