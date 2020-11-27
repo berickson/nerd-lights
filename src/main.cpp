@@ -22,6 +22,10 @@
 #define ARDIUNOJSON_TAB "  "
 #include <ArduinoJson.h>
 
+#include "Pushbutton.h"
+
+#include "Update.h" // for OTA update
+
 template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
 
@@ -58,6 +62,9 @@ int max_current = 500;
 String device_name="nerdlights";
 bool lights_on = true; // true if lights are currently turned on
 bool is_tree = false;
+
+const int pin_command_button = 0; // built in command button
+Pushbutton command_button(pin_command_button, 0);
 
 
 
@@ -423,7 +430,9 @@ void add_color(uint32_t color) {
 void set_program(JsonDocument & doc) {
   auto new_light_mode = doc["light_mode"];
   if(new_light_mode.is<int>()) {
+    auto old_lights_on = lights_on;
     set_light_mode((LightMode)new_light_mode.as<int>());
+    lights_on = old_lights_on;
   }
 
   auto new_brightness = doc["brightness"];
@@ -458,6 +467,7 @@ void set_program(JsonDocument & doc) {
     }
   }
 }
+
 
 void cmd_set_program(CommandEnvironment & env) {
   if (env.args.getParamCount() != 1) {
@@ -1155,6 +1165,31 @@ void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
   }
 }
 
+void download_program() {
+  HTTPClient client;
+
+  // Make a HTTP request:
+  //client.begin("http://www.arduino.cc/asciilogo.txt");
+  client.begin("http://nerdlights.net/programs/program1.json");
+  auto http_code = client.GET();
+  if(http_code>0) {
+    const int doc_capacity = 2000;
+    StaticJsonDocument<doc_capacity> doc;
+    String doc_string = client.getString();
+    auto error = deserializeJson(doc, doc_string);
+
+
+    if(error) {
+      Serial.println("could not parse json");
+      Serial.println(doc_string);
+      Serial.println(error.c_str());
+    } else {
+      set_program(doc);
+      Serial.println("program set from nerdlights.net");
+    }
+  }
+}
+
 void loop() {
   static unsigned long loop_count = 0;
   ++loop_count;
@@ -1163,6 +1198,27 @@ void loop() {
 
 
   esp32_common_loop();
+
+  command_button.execute(loop_ms);
+  if(command_button.is_click()) {
+    Serial.println("command clicked");
+  }
+  if(command_button.is_long_press()) {
+    Serial.println("command long pressed");
+  }
+
+  if(false && every_n_ms(last_loop_ms, loop_ms, 10000)) {
+    download_program();
+  }
+
+/*
+  if(every_n_ms(last_loop_ms, loop_ms, 1000)) {
+    for(int i=0;i<32;++i) {
+    Serial.printf("D%d: %d ",i, digitalRead(i));
+    }
+    Serial.println();
+  }
+*/  
   
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
