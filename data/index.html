@@ -32,12 +32,14 @@
         <button id="rainbow_button" onmousedown="command('rainbow', update_status)">rainbow</button>
         <button id="twinkle_button" onmousedown="command('twinkle', update_status)">twinkle</button>
         <button id="pattern1_button" onmousedown="command('pattern1', update_status)">pattern1</button>
-        <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
-        <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
-        <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
         <button id="explosion_button" onmousedown="command('explosion', update_status)">explosion</button>
         <button id="stripes_button" onmousedown="command('stripes', update_status)">stripes</button>
         <button id="strobe_button" onmousedown="command('strobe', update_status)">strobe</button>
+
+        <h2>Presets</h2>
+        <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
+        <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
+        <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
 
         <h2>Current Colors</h2>
         <div id="current-colors"></div>
@@ -76,6 +78,7 @@
         <button onmousedown="multi_command(['color 0 255 109','add 0 200 163'])">aqua</button>
         <button onmousedown="multi_command(['color 255 0 0','add 153 51 51'])">vday</button>
         <button onmousedown="multi_command(['color 255 13 0','add 191 159 0','add 19 19 223','add 255 64 0','add 19 255 19'])">match</button>
+        <button onmousedown="multi_command(['color 171 31 0','add 186 74 0','add 163 80 12'])">tday</button>
 
         <h2>Tweaks</h2>
         brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>
