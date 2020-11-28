@@ -1,0 +1,5 @@
+Support OTA upgrade
+- OTA upgrade places flag in NVM, and reboots
+- On reboot, reset flag and attempt an OTA upgrade
+
+Menu and screen blanking

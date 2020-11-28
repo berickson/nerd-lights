@@ -1,3 +1,5 @@
+#define CONFIG_ASYNC_TCP_RUNNING_CORE -1
+#define CONFIG_ASYNC_TCP_USE_WDT 0
 #include "esp32-common.h"
 
 #include <Adafruit_NeoPixel.h>
@@ -24,7 +26,10 @@
 
 #include "Pushbutton.h"
 
-#include "Update.h" // for OTA update
+#include "ota_update.h" // for OTA update
+
+const char * pref_do_ota_on_boot = "do_ota_on_boot";
+
 
 template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
@@ -209,6 +214,15 @@ const char * light_mode_name(LightMode mode) {
   return "mode_not_found";
 }
 
+
+void cmd_do_ota_upgrade(CommandEnvironment & env) {
+  preferences.begin("main");
+  preferences.putBool(pref_do_ota_on_boot,true);
+  preferences.end();
+  Serial.println("Restarting to perform OTA upgrade");
+  delay(500);
+  ESP.restart();
+}
 
 void cmd_get_program(CommandEnvironment & env) {
   Stream & o = env.cout;
@@ -702,7 +716,46 @@ void cmd_scan_networks(CommandEnvironment & env) {
 
 using namespace Colors;
 
+
+void do_ota_upgrade() {
+  Serial.begin(921600);
+  delay(1000);
+  Serial.println();
+  Serial.println("Performing OTA upgrade");
+  
+  preferences.begin("main", true);
+  String ssid = preferences.getString("ssid","");
+  String password = preferences.getString("password","");
+  preferences.end();
+
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  // Wait for connection to establish
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print("."); // Keep the serial monitor lit!
+    delay(500);
+  }
+  Serial.println("connected, doing upgrade");
+
+  do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/firmware.bin");
+  while(true) {
+    vTaskDelay(0);// pump messages
+  }
+
+}
+
 void setup() {
+  // do OTA upgrade if indicated
+  {
+    preferences.begin("main");
+    bool do_upgrade = preferences.getBool(pref_do_ota_on_boot);
+    preferences.putBool(pref_do_ota_on_boot, false); // set to false so we only try once
+    preferences.end();
+    if(do_upgrade) {
+      do_ota_upgrade();
+    }
+  }
+  
   esp32_common_setup();
   // read preferences
   preferences.begin("main");
@@ -718,15 +771,14 @@ void setup() {
   speed = preferences.getFloat("speed", 1.0);
   cycles = preferences.getFloat("cycles", 1.0);
   device_name = preferences.getString("bt_name", "ledlights");
+  preferences.putString("bt_name", device_name);
 
   unscaled_colors.clear();
   auto color_count = preferences.getUInt("color_count", 1);
-  Serial.println((String)"color_count:" + color_count);
   for(int i=0;i<color_count; ++i) {
     String key = (String)"color"+i;
     uint32_t color = preferences.getUInt(key.c_str(), 0x300000);
     unscaled_colors.push_back(color);
-    Serial.print(key+": "+color);
   }
   preferences.end();
   calculate_scaled_colors();
@@ -787,6 +839,8 @@ void setup() {
 
   commands.emplace_back(
     Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
+  commands.emplace_back(
+    Command("do_ota_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
 
 
 
@@ -1231,10 +1285,12 @@ void loop() {
 
     IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
     display.drawString(0, 20, ip_address.toString());
+
+    display.drawString(0, 30, "v0.3");
       
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
-      display.drawString(0,40,"Failed to obtain time");
+      display.drawString(0,40,"wifi not connected");
     } else {
       
       char buff[80];
