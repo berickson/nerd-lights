@@ -1,5 +1,15 @@
+show device name on front page, make title so it shows when saved
+Easy to follow instructions from device
+Menu and screen blanking
+
+Find and control local devices from single page
+    https://www.megunolink.com/articles/wireless/find-esp32-esp8266-ip-address-with-mdns/
+    https://github.com/watson/bonjour
+    each unit uniquely identified by its MAC id. (esp_efuse_mac_get_default)
+
+
+done
+-----------
 Support OTA upgrade
 - OTA upgrade places flag in NVM, and reboots
 - On reboot, reset flag and attempt an OTA upgrade
-
-Menu and screen blanking

@@ -718,9 +718,6 @@ using namespace Colors;
 
 
 void do_ota_upgrade() {
-  Serial.begin(921600);
-  delay(1000);
-  Serial.println();
   Serial.println("Performing OTA upgrade");
   
   preferences.begin("main", true);
@@ -745,6 +742,11 @@ void do_ota_upgrade() {
 }
 
 void setup() {
+  Serial.begin(921600);
+  Serial.println();
+  Serial.println("booting Nerdlights");
+
+
   // do OTA upgrade if indicated
   {
     preferences.begin("main");
@@ -1286,7 +1288,7 @@ void loop() {
     IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
     display.drawString(0, 20, ip_address.toString());
 
-    display.drawString(0, 30, "v0.3");
+    display.drawString(0, 30, "v0.4");
       
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
