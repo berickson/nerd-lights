@@ -11,15 +11,13 @@ String get_header_value(String header, String headerName) {
 }
 
 // OTA Logic 
-void do_ota_upgrade(String host, int port, String bin) {
+void do_ota_upgrade(String host, int port, String bin, int command = U_FLASH) {
   WiFiClient client;
   bool isValidContentType = false;
   int contentLength = 0;
   Serial.println("Connecting to: " + String(host));
   // Connect to S3
   if (client.connect(host.c_str(), port)) {
-    // Connection Succeed.
-    // Fecthing the bin
     Serial.println("Fetching Bin: " + String(bin));
 
     // Get the contents of the bin file
@@ -102,12 +100,8 @@ void do_ota_upgrade(String host, int port, String bin) {
       }
     }
   } else {
-    // Connect to S3 failed
-    // May be try?
-    // Probably a choppy network?
+    // failed
     Serial.println("Connection to " + String(host) + " failed. Please check your setup");
-    // retry??
-    // execOTA();
   }
 
   // Check what is the contentLength and if content type is `application/octet-stream`
@@ -116,7 +110,7 @@ void do_ota_upgrade(String host, int port, String bin) {
   // check contentLength and content type
   if (contentLength && isValidContentType) {
     // Check if there is enough to OTA Update
-    bool canBegin = Update.begin(contentLength);
+    bool canBegin = Update.begin(contentLength, command);
 
     // If yes, begin
     if (canBegin) {

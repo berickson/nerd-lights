@@ -28,7 +28,8 @@
 
 #include "ota_update.h" // for OTA update
 
-const char * pref_do_ota_on_boot = "do_ota_on_boot";
+const char * pref_do_ota_on_boot = "ota_firmware";
+const char * pref_do_ota_spiffs_on_boot = "ota_spiffs";
 
 
 template< typename T, size_t N >
@@ -140,7 +141,8 @@ enum LightMode {
   mode_twinkle,
   mode_stripes,
   mode_color,
-  mode_last = mode_color
+  mode_flicker,
+  mode_last = mode_flicker
 };
 
 LightMode light_mode = mode_rainbow;
@@ -210,6 +212,9 @@ const char * light_mode_name(LightMode mode) {
 
     case mode_color:
       return "normal";
+
+    case mode_flicker:
+      return "flicker";
   }
   return "mode_not_found";
 }
@@ -219,10 +224,21 @@ void cmd_do_ota_upgrade(CommandEnvironment & env) {
   preferences.begin("main");
   preferences.putBool(pref_do_ota_on_boot,true);
   preferences.end();
-  Serial.println("Restarting to perform OTA upgrade");
+  Serial.println("Restarting to perform firmware upgrade");
   delay(500);
   ESP.restart();
 }
+
+void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
+  preferences.begin("main");
+  preferences.putBool(pref_do_ota_spiffs_on_boot,true);
+  preferences.end();
+  Serial.println("Restarting to perform SPIFFS upgrade");
+  delay(500);
+  ESP.restart();
+}
+
+
 
 void cmd_get_program(CommandEnvironment & env) {
   Stream & o = env.cout;
@@ -512,6 +528,7 @@ void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
 void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_color); }
+void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); }
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
 
@@ -717,7 +734,7 @@ void cmd_scan_networks(CommandEnvironment & env) {
 using namespace Colors;
 
 
-void do_ota_upgrade() {
+void do_ota_upgrade(bool upgrade_spiffs = false) {
   Serial.println("Performing OTA upgrade");
   
   preferences.begin("main", true);
@@ -733,8 +750,13 @@ void do_ota_upgrade() {
     delay(500);
   }
   Serial.println("connected, doing upgrade");
-
-  do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/firmware.bin");
+  if(upgrade_spiffs) {
+    Serial.println("Upgrading SPIFFS");
+    do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/spiffs.bin",U_SPIFFS);
+  } else {
+    Serial.println("Upgrading firmware");
+    do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/firmware.bin");
+  }
   while(true) {
     vTaskDelay(0);// pump messages
   }
@@ -757,7 +779,18 @@ void setup() {
       do_ota_upgrade();
     }
   }
-  
+
+  {
+    preferences.begin("main");
+    bool do_upgrade = preferences.getBool(pref_do_ota_spiffs_on_boot);
+    preferences.putBool(pref_do_ota_spiffs_on_boot, false); // set to false so we only try once
+    preferences.end();
+    if(do_upgrade) {
+      do_ota_upgrade(true);
+    }
+  }
+
+
   esp32_common_setup();
   // read preferences
   preferences.begin("main");
@@ -813,6 +846,7 @@ void setup() {
               "second, 2.0 would do it twice per second"});
   commands.emplace_back(Command{"is_tree", cmd_set_tree_mode, "set to true if lights are on a tree, makes stripes same width bottom to top"});
   commands.emplace_back(Command{"normal", cmd_normal, "colors are repeated through the strand"});
+  commands.emplace_back(Command{"flicker", cmd_flicker, "flicker like a candle"});
   commands.emplace_back(
       Command("color", cmd_color, "set the first color of the pattern / pallet"));
   commands.emplace_back(
@@ -842,7 +876,9 @@ void setup() {
   commands.emplace_back(
     Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
   commands.emplace_back(
-    Command("do_ota_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
+    Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
+  commands.emplace_back(
+    Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected)"));
 
 
 
@@ -1221,6 +1257,36 @@ void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
   }
 }
 
+void flicker(std::vector<uint32_t> colors) {
+  for (int i = 0; i < led_count; ++i) {
+    if(rand()%5==0) {
+
+      // if( random(500) !=0)  continue;// individual lights to blink at different rates
+
+      // add up contribution from each color
+      int r = 0;
+      int g = 0;
+      int b = 0;
+      for(Color c : colors) {
+        auto level =random(50,100);
+        // auto level = 100;
+        r += c.r * level;
+        g += c.g * level;
+        b += c.b * level;
+      }
+      r /= 100*colors.size();
+      g /= 100*colors.size();
+      b /= 100*colors.size();
+
+      strip.setPixelColor(i,r,g,b);
+    } else {
+      Color c = colors[0];
+      // strip.setPixelColor(i,c.r/2,c.g/2,c.b/2);
+    }
+  }
+}
+
+
 void download_program() {
   HTTPClient client;
 
@@ -1354,6 +1420,9 @@ void loop() {
           break;
         case mode_color:
           repeat(current_colors);
+          break;
+        case mode_flicker:
+          flicker(current_colors);
           break;
       }
     } else {

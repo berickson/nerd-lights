@@ -1,6 +1,6 @@
 <html>
     <head>
-        <title>Nerd Lights</title>
+        <title id="head_title">Nerd Lights</title>
         <link rel="stylesheet" href="styles.css">
         <link rel="icon" type="image/png" href="favicon.png">
         <link rel="apple-touch-icon" sizes="128x128" href="niceicon.png">
@@ -23,7 +23,7 @@
 
         <script src="index.js"></script> 
 
-        <h1>Nerd Lights</h1>
+        <h1 id="page_title">Nerd Lights</h1>
         <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button>
 
         <h2>Effects</h2>
@@ -35,11 +35,13 @@
         <button id="explosion_button" onmousedown="command('explosion', update_status)">explosion</button>
         <button id="stripes_button" onmousedown="command('stripes', update_status)">stripes</button>
         <button id="strobe_button" onmousedown="command('strobe', update_status)">strobe</button>
+        <button id="flicker_button" onmousedown="command('flicker', update_status)">flicker</button>
 
         <h2>Presets</h2>
         <button onmousedown="multi_command(['color 30 0 0','add 200 0 0','add 200 15 0','add 100 15 0','add 200 40 0','twinkle'])">embers</button>
         <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
         <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
+        <button onmousedown="multi_command(['color 255 0 0','add 255 191 0','add 255 191 0','flicker'])">candle</button>
 
         <h2>Current Colors</h2>
         <div id="current-colors"></div>

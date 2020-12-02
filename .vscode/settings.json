@@ -12,7 +12,8 @@
         "memory": "cpp",
         "random": "cpp",
         "initializer_list": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "tuple": "cpp"
     },
     "idf.port": "/dev/ttyUSB0"
 }

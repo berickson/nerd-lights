@@ -261,6 +261,8 @@ function on_status_update(e) {
     update_cycles(status.cycles);
     update_saturation(status.saturation);
 
+    document.getElementById("page_title").innerText = "Nerd Lights: " + status.device_name;
+    document.getElementById("head_title").innerText = status.device_name;
     document.getElementById("on_button").setAttribute("active", status.lights_on);
     document.getElementById("off_button").setAttribute("active", !status.lights_on);
     document.getElementById("normal_button").setAttribute("active", status.light_mode == "normal");
@@ -271,6 +273,7 @@ function on_status_update(e) {
     document.getElementById("explosion_button").setAttribute("active", status.light_mode == "explosion");
     document.getElementById("stripes_button").setAttribute("active", status.light_mode == "stripes");
     document.getElementById("strobe_button").setAttribute("active", status.light_mode == "strobe");
+    document.getElementById("flicker_button").setAttribute("active", status.light_mode == "flicker");
 
 }
 
