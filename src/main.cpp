@@ -1113,8 +1113,6 @@ uint32_t color_at_brightness( uint32_t color , uint8_t new_brightness) {
 }
 
 void twinkle() {
-  bool trace = false;
-  if(trace) Serial.println("start twinkle");
   uint32_t ms = clock_millis();
   static double next_ms = 0;
 
@@ -1150,7 +1148,6 @@ void twinkle() {
   
   // remove done LEDS
   while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
-    strip.setPixelColor( blinking_leds.front().led_number, base_color );
     blinking_leds.pop_front();
   }
 
@@ -1188,6 +1185,109 @@ void twinkle() {
     uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
     
     strip.setPixelColor( led.led_number, color);
+  }
+}
+
+
+// add two colors (adding light) clamping with same shade on overflow
+Color add(Color c1, Color c2) {
+  int r = c1.r+c2.r;
+  int g = c1.g+c2.g;
+  int b = c1.b+c2.b;
+
+  // try to clamp while keeping color
+  int v = max(r,max(g,b));
+  if(v > 255) {
+    r = r * 255 / v;
+    g = g * 255 / v;
+    b = b * 255 / v;
+  }
+  Color rv;
+  rv.r = r;
+  rv.g = g;
+  rv.b = b;
+
+  return rv;
+}
+
+
+
+void explosion2() {
+  uint32_t ms = clock_millis();
+  static double next_ms = 0;
+
+  if(ms - next_ms > 1000) {
+    next_ms = ms;
+  };
+
+  struct explosion_t {
+    int16_t center_led_number;
+    int32_t start_ms;
+    int32_t explosion_color;
+    int8_t max_radius_in_leds;
+  };
+  const int32_t explosion_ms = 1000;
+
+  // static std::deque<blinking_led_t> blinking_leds;
+  static explosion_t arr[100];
+  static nonstd::ring_span<explosion_t> explosions( arr, arr + dim(arr), arr, 0);
+  
+  // about 10% of the lights are twinkling at any time
+  float ratio_exploding = .1;
+  uint32_t average_explosion_count = led_count * ratio_exploding;
+  uint32_t max_explosion_count = dim(arr);//average_twinkling_count*2;
+
+  // twinkling takes 1 second
+  float average_ms_per_new_explosion = (float)explosion_ms / average_explosion_count;
+
+  bool multi = current_colors.size() >= 2;
+  uint32_t base_color = multi ? current_colors[0] : black;
+
+  for(int i = 0; i < led_count; ++i) {
+    strip.setPixelColor(i, base_color);
+  }
+  
+  // remove done explosions
+  while(explosions.size() > 0 && ms - explosions.front().start_ms > explosion_ms  ) {
+    explosions.pop_front();
+  }
+
+  while(next_ms <= ms) {
+    // add a explosion to list
+    if(explosions.size() < max_explosion_count) {
+      
+      explosion_t explosion;
+      explosion.center_led_number = rand() % led_count;
+      explosion.start_ms = ms;
+      explosion.explosion_color = current_colors[rand()%current_colors.size()];
+      explosion.max_radius_in_leds = 5 + rand() % 10;
+      explosions.push_back(explosion);
+    }
+
+    // add random time to next_ms
+    double add_ms = frand() * 2 * average_ms_per_new_explosion;
+    next_ms = next_ms + add_ms;
+  }
+
+  for(auto & explosion : explosions) {
+    for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
+      auto distance = abs(x);
+      int i = explosion.center_led_number + x;
+      uint32_t elapsed_ms = ms - explosion.start_ms;
+
+      uint16_t radius_in_leds =
+          (uint64_t)explosion.max_radius_in_leds * elapsed_ms / explosion_ms;
+                
+      int intensity = (uint64_t)brightness * (explosion.max_radius_in_leds - radius_in_leds) *
+                      (explosion.max_radius_in_leds - radius_in_leds) /
+                      (explosion.max_radius_in_leds * explosion.max_radius_in_leds);
+
+
+      uint32_t color = abs(distance - radius_in_leds) < 2
+                          ?  color_at_brightness(explosion.explosion_color, intensity)
+                          : black;
+      strip.setPixelColor(i, add(strip.getPixelColor(i), color));
+    }
   }
 }
 
@@ -1402,7 +1502,7 @@ void loop() {
           twinkle();
           break;
         case mode_explosion:
-          explosion();
+          explosion2();
           break;
         case mode_gradient:
           gradient(is_tree);
