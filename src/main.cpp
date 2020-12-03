@@ -1141,8 +1141,6 @@ void twinkle() {
   uint16_t twinkle_ms = 1000;
   float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
 
-  if(trace) Serial.println("a");
-
   bool multi = current_colors.size() >= 2;
   uint32_t base_color = multi ? current_colors[0] : black;
 
@@ -1155,8 +1153,6 @@ void twinkle() {
     strip.setPixelColor( blinking_leds.front().led_number, base_color );
     blinking_leds.pop_front();
   }
-
-  if(trace) Serial.println("b");
 
   while(next_ms <= ms) {
     // add a twinkling led to list
@@ -1182,8 +1178,6 @@ void twinkle() {
     next_ms = next_ms + add_ms;
   }
 
-  if(trace) Serial.println("c");
-
   for(auto & led : blinking_leds) {
     // time from midpoint peak
     auto ms_peak = led.done_ms - twinkle_ms/2.;
@@ -1195,7 +1189,6 @@ void twinkle() {
     
     strip.setPixelColor( led.led_number, color);
   }
-  if(trace) Serial.println("done twinkle");
 }
 
 
@@ -1206,7 +1199,8 @@ void explosion() {
   uint32_t ms = clock_millis();
   static int16_t center_led = 0;
   static uint32_t start_millis = 0;
-  static int16_t hue = 0;
+  //static int16_t hue = 0;
+  static Color explosion_color = 0;
   int16_t max_radius_in_leds = 10;
   int16_t explosion_ms = 1000;
 
@@ -1214,7 +1208,8 @@ void explosion() {
   if (elapsed_ms > explosion_ms) {
     center_led = rand() % led_count;
     start_millis = ms;
-    hue = rand();
+    // hue = rand();
+    explosion_color.num = current_colors[rand()%current_colors.size()];
     max_radius_in_leds = 5 + rand() % 10;
     explosion_ms = 1000 + rand() % 1000;
   }
@@ -1226,7 +1221,7 @@ void explosion() {
   for (int i = 0; i < led_count; ++i) {
     auto distance = abs(i - center_led);
     uint32_t color = abs(distance - radius_in_leds) < 2
-                         ? strip.ColorHSV(hue, 250, intensity)
+                         ?  color_at_brightness(explosion_color, intensity)
                          : black;
     strip.setPixelColor(i, color);
   }
@@ -1279,9 +1274,6 @@ void flicker(std::vector<uint32_t> colors) {
       b /= 100*colors.size();
 
       strip.setPixelColor(i,r,g,b);
-    } else {
-      Color c = colors[0];
-      // strip.setPixelColor(i,c.r/2,c.g/2,c.b/2);
     }
   }
 }
