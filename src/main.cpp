@@ -259,7 +259,8 @@ void cmd_get_program(CommandEnvironment & env) {
     color_json["g"]=c.g;
     color_json["b"]=c.b;
   }
-  serializeJsonPretty(doc, o);
+  //serializeJsonPretty(doc, o);
+  serializeJson(doc, o);
   // print memory usage
   env.cerr.println();
   env.cerr.print("used bytes:");
