@@ -1257,7 +1257,7 @@ Color add(Color c1, Color c2) {
 
 
 
-void explosion2() {
+void explosion() {
   uint32_t ms = clock_millis();
   static double next_ms = 0;
 
@@ -1315,6 +1315,7 @@ void explosion2() {
   }
 
   for(auto & explosion : explosions) {
+    Color color = color_at_brightness(explosion.explosion_color, brightness);
     for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
       auto distance = abs(x);
       int i = explosion.center_led_number + x;
@@ -1322,17 +1323,15 @@ void explosion2() {
 
       uint16_t radius_in_leds =
           (uint64_t)explosion.max_radius_in_leds * elapsed_ms / explosion_ms;
-                
-      int intensity = (uint64_t)brightness * (explosion.max_radius_in_leds - radius_in_leds) *
+
+      float percent = (float)(explosion.max_radius_in_leds - radius_in_leds) *
                       (explosion.max_radius_in_leds - radius_in_leds) /
                       (explosion.max_radius_in_leds * explosion.max_radius_in_leds);
 
-
-      Color color = abs(distance - radius_in_leds) < 2
-                          ?  color_at_brightness(explosion.explosion_color, intensity)
-                          : black;
       if(i>0 && i<led_count) {
-        leds[i] =  add(Color(leds[i].r,leds[i].g,leds[i].b) , color);
+        if (abs(distance - radius_in_leds) < 2) {
+          leds[i] =  mix_colors(leds[i], color, percent);
+        }
       }
     }
   }
@@ -1343,38 +1342,6 @@ void explosion2() {
 void off() { 
   for(int i=0; i < led_count; ++i) {
     leds[i]=black;
-  }
-}
-
-void explosion() {
-  uint32_t ms = clock_millis();
-  static int16_t center_led = 0;
-  static uint32_t start_millis = 0;
-  //static int16_t hue = 0;
-  static Color explosion_color = 0;
-  int16_t max_radius_in_leds = 10;
-  int16_t explosion_ms = 1000;
-
-  uint32_t elapsed_ms = ms - start_millis;
-  if (elapsed_ms > explosion_ms) {
-    center_led = rand() % led_count;
-    start_millis = ms;
-    // hue = rand();
-    explosion_color = current_colors[rand()%current_colors.size()];
-    max_radius_in_leds = 5 + rand() % 10;
-    explosion_ms = 1000 + rand() % 1000;
-  }
-  uint16_t radius_in_leds =
-      (uint64_t)max_radius_in_leds * elapsed_ms / explosion_ms;
-  int intensity = (uint64_t)brightness * (max_radius_in_leds - radius_in_leds) *
-                  (max_radius_in_leds - radius_in_leds) /
-                  (max_radius_in_leds * max_radius_in_leds);
-  for (int i = 0; i < led_count; ++i) {
-    auto distance = abs(i - center_led);
-    Color color = abs(distance - radius_in_leds) < 2
-                         ?  color_at_brightness(explosion_color, intensity)
-                         : black;
-    leds[i]=color;
   }
 }
 
@@ -1555,7 +1522,7 @@ void loop() {
           twinkle();
           break;
         case mode_explosion:
-          explosion2();
+          explosion();
           break;
         case mode_gradient:
           gradient(is_tree);
