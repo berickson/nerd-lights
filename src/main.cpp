@@ -1,8 +1,7 @@
-#define CONFIG_ASYNC_TCP_RUNNING_CORE -1
-#define CONFIG_ASYNC_TCP_USE_WDT 0
+//#define CONFIG_ASYNC_TCP_RUNNING_CORE -1
+// #define CONFIG_ASYNC_TCP_USE_WDT 0
 #include "esp32-common.h"
 
-#include <Adafruit_NeoPixel.h>
 #include "math.h"
 #ifdef __AVR__
 #include <avr/power.h>
@@ -42,12 +41,12 @@ union Color {
     Color(int32_t c) {
         num = c;
     }
-    Color(uint8_t r, uint8_t b, uint8_t g) {
+    Color(uint8_t r, uint8_t g, uint8_t b) {
         this->r = r;
         this->b = b;
         this->g = g;
     }
-    operator uint32_t() {
+    operator uint32_t() const  {
         return num;
     }
     struct __attribute__ ((packed)){
@@ -58,6 +57,9 @@ union Color {
     };
     uint32_t num;
 };
+
+Color leds[1000];
+
 
 
 
@@ -77,11 +79,12 @@ Pushbutton command_button(pin_command_button, 0);
 float speed = 1.0;
 float cycles = 1.0;
 
-// *********************************
-// ESP32 Digital LED Driver
-//
+//#define use_fastled
+#if defined(use_fastled)
+#include <FastLED.h>
+CRGB fast_leds[1000];
+#else
 #include "esp32_digital_led_lib.h"
-//#include "esp32_digital_led_funcs.h"
 strand_t STRANDS[] = {{.rmtChannel = 2,
                        .gpioNum = pin_strand_1,
                        .ledType = LED_WS2812B_V3,
@@ -90,6 +93,7 @@ strand_t STRANDS[] = {{.rmtChannel = 2,
 const int STRANDCNT = sizeof(STRANDS) / sizeof(STRANDS[0]);
 
 strand_t *strands[8];
+#endif
 
 
 ////////////////////////////////////////////
@@ -157,8 +161,6 @@ uint8_t brightness = 50;
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 //   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-Adafruit_NeoPixel strip =
-    Adafruit_NeoPixel(led_count, pin_strand_1, NEO_RGB + NEO_KHZ400);
 
 // IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
 // pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
@@ -169,18 +171,9 @@ constexpr int16_t degrees_to_hex(int32_t degrees) {
   return (degrees % 360) * 0xffff / 360;
 }
 
-namespace Colors {
-uint32_t black = strip.Color(0, 0, 0);
-uint32_t warm_white = strip.Color(8, 5, 2);
-uint32_t light_blue = strip.ColorHSV(degrees_to_hex(197), 50 * 0xff / 100, 20);
-uint32_t pink = strip.ColorHSV(degrees_to_hex(350), 30 * 0xff / 100, 20);
-uint32_t white = strip.Color(20, 23, 20);
-uint32_t red = strip.Color(20, 0, 0);
-uint32_t blue = strip.Color(0, 0, 20);
-};  // namespace Colors
 
-std::vector<uint32_t> unscaled_colors = {strip.Color(15, 15, 15)};
-std::vector<uint32_t> current_colors = {strip.Color(15, 15, 15)};
+std::vector<Color> unscaled_colors = {Color(15, 15, 15)};
+std::vector<Color> current_colors = {Color(15, 15, 15)};
 
 ////////////////////////////////
 // define commands
@@ -252,8 +245,7 @@ void cmd_get_program(CommandEnvironment & env) {
 
   JsonArray colors_array = doc.createNestedArray("colors");
   for (int i = 0; i < unscaled_colors.size();++i) {
-    Color c;
-    c.num = unscaled_colors[i];
+    Color c = unscaled_colors[i];
     auto color_json = colors_array.createNestedObject();
     color_json["r"]=c.r;
     color_json["g"]=c.g;
@@ -329,8 +321,7 @@ void cmd_status(CommandEnvironment & env) {
     if(i > 0) {
       o.print(", ");
     }
-    Color p;
-    p.num = unscaled_colors[i];
+    Color p = unscaled_colors[i];
     o.print("{");
     o.print("\"r\":");
     o.print(p.r);
@@ -381,22 +372,20 @@ void calculate_scaled_colors() {
   // calculate max of all components
   Color p;
   for(auto & c : unscaled_colors){
-    p.num = c;
 
-    max_c = max(max_c, p.r);
-    max_c = max(max_c, p.g);
-    max_c = max(max_c, p.b);
+    max_c = max(max_c, c.r);
+    max_c = max(max_c, c.g);
+    max_c = max(max_c, c.b);
   }
 
   current_colors.clear();
   for(auto & c : unscaled_colors){
-    p.num = c;
     if(max_c > 0) {
-      p.r = mul_div(p.r, brightness, max_c);
-      p.g = mul_div(p.g, brightness, max_c);
-      p.b = mul_div(p.b, brightness, max_c);
+      p.r = mul_div(c.r, brightness, max_c);
+      p.g = mul_div(c.g, brightness, max_c);
+      p.b = mul_div(c.b, brightness, max_c);
     }
-    current_colors.push_back(p.num);
+    current_colors.push_back(p);
   }
 }
 
@@ -446,7 +435,7 @@ void set_speed(float new_speed) {
 
 }
 
-void add_color(uint32_t color) {
+void add_color(Color color) {
   unscaled_colors.push_back(color);
   uint16_t color_index = unscaled_colors.size()-1; 
   String key = String("color")+color_index;
@@ -546,8 +535,7 @@ void cmd_color(CommandEnvironment &env) {
 
   unscaled_colors.clear();
   for(int i = 0; i < n_params/3; ++i) {
-    uint32_t color =
-        strip.Color(atoi(env.args.getCmdParam(i*3+1)), atoi(env.args.getCmdParam(i*3+2)),
+    Color color = Color(atoi(env.args.getCmdParam(i*3+1)), atoi(env.args.getCmdParam(i*3+2)),
                     atoi(env.args.getCmdParam(i*3+3)));
     add_color(color);
   }
@@ -632,7 +620,7 @@ void cmd_add_color(CommandEnvironment &env) {
   }
 
   uint32_t color =
-      strip.Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
+      Color(atoi(env.args.getCmdParam(1)), atoi(env.args.getCmdParam(2)),
                   atoi(env.args.getCmdParam(3)));
   add_color(color);
 }
@@ -668,8 +656,12 @@ void cmd_set_led_count(CommandEnvironment &env) {
     preferences.begin("main");
     preferences.putInt("led_count", led_count);
     preferences.end();
+#if defined(use_fastled)
+    FastLED.addLeds<WS2812, pin_strand_1, RGB>(fast_leds, led_count);
+#else
     STRANDS[0].numPixels = led_count;
-    strip.updateLength(led_count);
+#endif
+    // strip.updateLength(led_count);
   }
   env.cout.print("ledcount = ");
   env.cout.println(led_count);
@@ -732,8 +724,6 @@ void cmd_scan_networks(CommandEnvironment & env) {
 }
 
 
-using namespace Colors;
-
 
 void do_ota_upgrade(bool upgrade_spiffs = false) {
   Serial.println("Performing OTA upgrade");
@@ -791,15 +781,18 @@ void setup() {
     }
   }
 
-
   esp32_common_setup();
   // read preferences
   preferences.begin("main");
 
   is_tree = preferences.getBool("is_tree", false);
   led_count = preferences.getInt("led_count", 50);
-  STRANDS[0].numPixels = led_count;
-  strip.updateLength(led_count);
+#if defined(use_fastled)
+  FastLED.addLeds<WS2812, pin_strand_1, RGB>(fast_leds, led_count);
+#else
+  STRANDS[0].numPixels = led_count;  
+#endif
+
   max_current = preferences.getInt("max_current", 500);
   light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
   saturation = preferences.getInt("saturation", 200);
@@ -816,6 +809,7 @@ void setup() {
     uint32_t color = preferences.getUInt(key.c_str(), 0x300000);
     unscaled_colors.push_back(color);
   }
+
   preferences.end();
   calculate_scaled_colors();
 
@@ -882,13 +876,15 @@ void setup() {
     Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected)"));
 
 
-
+#if not defined(use_fastled)
   digitalLeds_initDriver();
   for (int i = 0; i < STRANDCNT; i++) {
     gpioSetup(STRANDS[i].gpioNum, OUTPUT, LOW);
     strands[i] = &STRANDS[i];
   }
   digitalLeds_addStrands(strands, STRANDCNT);
+#endif
+  
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html").setFilter(ON_STA_FILTER);
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index-ap.html").setFilter(ON_AP_FILTER);
   server.on("/vector-icon.svg",[](AsyncWebServerRequest*request) {
@@ -955,7 +951,8 @@ void setup() {
         }
       }
     }
-    );
+  );
+
 }  // setup
 
 // returns part of area up tree [0:1] that needs to be lit to cover height  up tree h[0:1]
@@ -983,7 +980,7 @@ void gradient(bool is_tree = true) {
     uint32_t color_b = current_colors[(division)%n_colors];
     double part_b = (i-division_start)/(division_end-division_start);
     uint32_t color = mix_colors(color_a, color_b, part_b);
-    strip.setPixelColor(i, color);
+    leds[i]=color;
   }
 }
 
@@ -992,39 +989,38 @@ void pattern1() {
   // strip.clear();
   // step through the LEDS, and update the colors as needed
   for (int i = 0; i < led_count; i++) {
-    pixelColor_t  c;
-    c.num = current_colors[0];
+    Color  c = current_colors[0];
     // use ints to allow overflow, will clamp at end
     int r = c.r;
     int g = c.g;
     int b = c.b;
     if (current_colors.size() >= 2 && (ms / 1000) % led_count == i) {
-      c.num = current_colors[1];
+      c = current_colors[1];
       r += c.r;
       g += c.g;
       b += c.b;
     }
 
     if (current_colors.size() >= 3 && (ms / 20) % led_count == i) {
-      c.num = current_colors[2];
+      c = current_colors[2];
       r += c.r;
       g += c.g;
       b += c.b;
     }
     if (current_colors.size() >= 4 && (ms / 30) % led_count == i) {
-      c.num = current_colors[3];
+      c = current_colors[3];
       r += c.r;
       g += c.g;
       b += c.b;
     }
     if (current_colors.size() >= 5 && (ms / 40) % led_count == i) {
-      c.num = current_colors[4];
+      c = current_colors[4];
       r += c.r;
       g += c.g;
       b += c.b;
     }
     if (current_colors.size() >= 6 && (ms / 35) % led_count == led_count - i) {
-      c.num = current_colors[5];
+      c = current_colors[5];
       r += c.r;
       g += c.g;
       b += c.b;
@@ -1042,8 +1038,44 @@ void pattern1() {
       c.b = b;
     }
 
-    strip.setPixelColor(i, c.num);
+    leds[i]=c;
   }
+}
+
+
+// based on https://www.codespeedy.com/hsv-to-rgb-in-cpp/
+Color HSVtoRGB(float H, float S, float V) {
+  H = clamp(H, 0.f, 360.f);
+  S = clamp(S, 0.f, 100.f);
+  V = clamp(V, 0.f, 100.f);
+
+  float s = S / 100;
+  float v = V / 100;
+  float C = s * v;
+  float X = C * (1 - abs(fmod(H / 60.0, 2) - 1));
+  float m = v - C;
+  float r, g, b;
+  if (H < 60) {
+    r = C, g = X, b = 0;
+  } else if (H < 120) {
+    r = X, g = C, b = 0;
+  } else if (H < 180) {
+    r = 0, g = C, b = X;
+  } else if (H < 240) {
+    r = 0, g = X, b = C;
+  } else if (H < 300) {
+    r = X, g = 0, b = C;
+  } else {
+    r = C, g = 0, b = X;
+  }
+  int R = (r + m) * 255;
+  int G = (g + m) * 255;
+  int B = (b + m) * 255;
+  return Color(R, G, B);
+}
+
+Color ColorHSV(int h,int s, int v) {
+  return HSVtoRGB(h*360./0xffff,s*100./255.,v*100./255.);
 }
 
 void rainbow() {
@@ -1056,9 +1088,9 @@ void rainbow() {
   //  auto rand_light = rand() % led_count;
   double ratio = cycles / led_count * 0xffff;
   for (int i = 0; i < led_count; ++i) {
-    uint16_t hue = fmod((i + offset) * ratio, 0xffff);  // 0-0xffff
-    auto color = strip.ColorHSV(hue, saturation, brightness);
-    strip.setPixelColor(i, color);
+    uint16_t hue = fabs(fmod((i + offset) * ratio, 0xffff));  // 0-0xffff
+    auto color = ColorHSV(hue, saturation, brightness);
+    leds[i]=color;
   }
 }
 
@@ -1068,18 +1100,20 @@ void rotate() {
   std::vector<uint32_t> strip_copy;
   strip_copy.resize(led_count);
   for( int i = 0; i < led_count; ++i) {
-    strip_copy[i] = strip.getPixelColor(i);
+    strip_copy[i] = leds[i];
   }
-  for( int i = 0; i < strip.numPixels(); ++i) {
+  for( int i = 0; i < led_count; ++i) {
 
     float f_pos = fmod(fabs(i+offset), led_count);
     int i_temp = floor(f_pos);
     int i_temp2 = i_temp + 1;
     if(i_temp2 >= led_count) i_temp2 = 0;
     float part_2 = f_pos - i_temp;
-    strip.setPixelColor(i, mix_colors(strip_copy[i_temp], strip_copy[i_temp2], part_2));
+    leds[i] =  mix_colors(strip_copy[i_temp], strip_copy[i_temp2], part_2);
   }
 }
+
+const Color black = {0,0,0};
 
 void strobe() {
   // uses speed and cycles
@@ -1089,7 +1123,7 @@ void strobe() {
   
   int n  = floor( (ms * (double)speed) / 1000.0);
 
-  uint32_t color = black;
+  uint32_t color = Color(0,0,0);
   if(multi) {
     color = current_colors[n%current_colors.size()];
   } else {
@@ -1097,20 +1131,19 @@ void strobe() {
   }
 
    for (int i = 0; i < led_count; ++i) {
-    strip.setPixelColor(i, color);
+    leds[i]=color;
   }
 }
 
-uint32_t color_at_brightness( uint32_t color , uint8_t new_brightness) {
-  pixelColor_t c;
-  c.num = color;
+Color color_at_brightness( Color color , uint8_t new_brightness) {
+  Color c = color;
   uint32_t max_c = max<uint8_t>(max<uint8_t>(c.r,c.g),c.b);
   if(max_c > 0) {
     c.r = mul_div(c.r, new_brightness, max_c);
     c.g = mul_div(c.g, new_brightness, max_c);
     c.b = mul_div(c.b, new_brightness, max_c);
   }
-  return c.num;
+  return c;
 }
 
 void twinkle() {
@@ -1144,7 +1177,7 @@ void twinkle() {
   uint32_t base_color = multi ? current_colors[0] : black;
 
   for(int i = 0; i < led_count; ++i) {
-    strip.setPixelColor(i, base_color);
+    leds[i] = base_color;
   }
   
   // remove done LEDS
@@ -1185,7 +1218,7 @@ void twinkle() {
 
     uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
     
-    strip.setPixelColor( led.led_number, color);
+    leds[led.led_number]=color;
   }
 }
 
@@ -1242,10 +1275,10 @@ void explosion2() {
   float average_ms_per_new_explosion = (float)explosion_ms / average_explosion_count;
 
   bool multi = current_colors.size() >= 2;
-  uint32_t base_color = multi ? current_colors[0] : black;
+  Color base_color = multi ? current_colors[0] : black;
 
   for(int i = 0; i < led_count; ++i) {
-    strip.setPixelColor(i, base_color);
+    leds[i]=base_color;
   }
   
   // remove done explosions
@@ -1284,17 +1317,23 @@ void explosion2() {
                       (explosion.max_radius_in_leds * explosion.max_radius_in_leds);
 
 
-      uint32_t color = abs(distance - radius_in_leds) < 2
+      Color color = abs(distance - radius_in_leds) < 2
                           ?  color_at_brightness(explosion.explosion_color, intensity)
                           : black;
-      strip.setPixelColor(i, add(strip.getPixelColor(i), color));
+      if(i>0 && i<led_count) {
+        leds[i] =  add(Color(leds[i].r,leds[i].g,leds[i].b) , color);
+      }
     }
   }
 }
 
 
 
-void off() { strip.clear(); }
+void off() { 
+  for(int i=0; i < led_count; ++i) {
+    leds[i]=black;
+  }
+}
 
 void explosion() {
   uint32_t ms = clock_millis();
@@ -1310,7 +1349,7 @@ void explosion() {
     center_led = rand() % led_count;
     start_millis = ms;
     // hue = rand();
-    explosion_color.num = current_colors[rand()%current_colors.size()];
+    explosion_color = current_colors[rand()%current_colors.size()];
     max_radius_in_leds = 5 + rand() % 10;
     explosion_ms = 1000 + rand() % 1000;
   }
@@ -1321,14 +1360,14 @@ void explosion() {
                   (max_radius_in_leds * max_radius_in_leds);
   for (int i = 0; i < led_count; ++i) {
     auto distance = abs(i - center_led);
-    uint32_t color = abs(distance - radius_in_leds) < 2
+    Color color = abs(distance - radius_in_leds) < 2
                          ?  color_at_brightness(explosion_color, intensity)
                          : black;
-    strip.setPixelColor(i, color);
+    leds[i]=color;
   }
 }
 
-void stripes(std::vector<uint32_t> colors, bool is_tree = false) {
+void stripes(std::vector<Color> colors, bool is_tree = false) {
   if(led_count==0) {
     return;
   }
@@ -1342,18 +1381,18 @@ void stripes(std::vector<uint32_t> colors, bool is_tree = false) {
       led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
     }
     auto color = colors[clamp<size_t>(n_color,0,colors.size()-1)];
-    strip.setPixelColor(i, color);
+    leds[i]=color;
   }
 }
 
-void repeat(std::vector<uint32_t> colors, uint16_t repeat_count = 1) {
+void repeat(std::vector<Color> colors, uint16_t repeat_count = 1) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / repeat_count) % colors.size()];
-    strip.setPixelColor(i, color);
+    leds[i]=color;
   }
 }
 
-void flicker(std::vector<uint32_t> colors) {
+void flicker(std::vector<Color> colors) {
   for (int i = 0; i < led_count; ++i) {
     if(rand()%5==0) {
 
@@ -1374,11 +1413,13 @@ void flicker(std::vector<uint32_t> colors) {
       g /= 100*colors.size();
       b /= 100*colors.size();
 
-      strip.setPixelColor(i,r,g,b);
+      leds[i]=Color(r,g,b);
+
     }
   }
 }
 
+#include "HTTPClient.h"
 
 void download_program() {
   HTTPClient client;
@@ -1532,33 +1573,40 @@ void loop() {
       const int base_current = 180; // mA with nothing turned on
       int max_sum_rgb = (max_current-base_current) * 50 / 3;
       int sum_rgb = 0;
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        pixelColor_t p;
-        p.num = strip.getPixelColor(i);
+      for (uint16_t i = 0; i < led_count; i++) {
+        Color p = leds[i];
         sum_rgb += p.r + p.g + p.b;
       }
       if(sum_rgb > max_sum_rgb) {
-        for (uint16_t i = 0; i < strip.numPixels(); i++) {
-          pixelColor_t p;
-          p.num = strip.getPixelColor(i);
+        for (uint16_t i = 0; i < led_count; i++) {
+          Color p = leds[i];
           p.r = mul_div(p.r, max_sum_rgb, sum_rgb);
           p.g = mul_div(p.g, max_sum_rgb, sum_rgb);
           p.b = mul_div(p.b, max_sum_rgb, sum_rgb);
-          strip.setPixelColor(i, p.num);
+          leds[i] = p;
         }
-        strip.setPixelColor(0,red);
+        leds[0]=Color(255,0,0);
         
       }
     }
-      
-    for (uint16_t i = 0; i < strip.numPixels(); i++) {
+
+    for(int i=0;i<led_count;++i) {
+#if defined(use_fastled)
+      fast_leds[i] = CRGB(leds[i].r, leds[i].g, leds[i].b);
+#else
       auto &p = strands[0]->pixels[i];
-      p.num = strip.getPixelColor(i);
+      p.num = leds[i];
       std::swap(p.g, p.b);
       std::swap(p.r, p.b);
+#endif
     }
 
+#if defined(use_fastled)
+    FastLED.show();
+#else
     digitalLeds_drawPixels(strands, STRANDCNT);
+ #endif
+
   }
 
   delay(10);
