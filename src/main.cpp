@@ -1042,54 +1042,65 @@ void pattern1() {
   }
 }
 
-
-// based on https://www.codespeedy.com/hsv-to-rgb-in-cpp/
-Color HSVtoRGB(float H, float S, float V) {
-  H = clamp(H, 0.f, 360.f);
-  S = clamp(S, 0.f, 100.f);
-  V = clamp(V, 0.f, 100.f);
-
-  float s = S / 100;
-  float v = V / 100;
-  float C = s * v;
-  float X = C * (1 - abs(fmod(H / 60.0, 2) - 1));
-  float m = v - C;
+// inputs:
+//    h 0-360 s: 0-1 v: 0-1
+//
+// altered form of https://gist.github.com/fairlight1337/4935ae72bcbcc1ba5c72
+// and https://www.codespeedy.com/hsv-to-rgb-in-cpp/
+Color HSVtoRGB(float h, float s, float v) {
   float r, g, b;
-  if (H < 60) {
-    r = C, g = X, b = 0;
-  } else if (H < 120) {
-    r = X, g = C, b = 0;
-  } else if (H < 180) {
-    r = 0, g = C, b = X;
-  } else if (H < 240) {
-    r = 0, g = X, b = C;
-  } else if (H < 300) {
-    r = X, g = 0, b = C;
-  } else {
-    r = C, g = 0, b = X;
-  }
-  int R = (r + m) * 255;
-  int G = (g + m) * 255;
-  int B = (b + m) * 255;
-  return Color(R, G, B);
-}
+  float c = v * s; // chroma
+  float h_prime = h/60.;
+  float x = c * (1 - abs(fmodf(h_prime, 2) - 1));
+  float m = v - c;
+  
+  switch(int(h_prime)) {
+    case 0:
+      r = c; g = x; b = 0;
+      break;
 
-Color ColorHSV(int h,int s, int v) {
-  return HSVtoRGB(h*360./0xffff,s*100./255.,v*100./255.);
+    case 1:
+      r = x; g = c; b = 0;
+      break;
+
+    case 2:
+      r = 0; g = c; b = x;
+      break;
+
+    case 3:
+      r = 0; g = x; b = c;
+      break;
+
+    case 4:
+      r = x; g = 0; b = c;
+      break;
+
+    case 5:
+      r = c; g = 0; b = x;
+      break;
+
+    default:
+      r = 0; g = 0; b = 0;
+    break;
+
+  }
+
+
+  r += m;
+  g += m;
+  b += m;
+  return Color(r*255,g*255,b*255);
 }
 
 void rainbow() {
   // uses speed and cycles
   auto ms = clock_millis();
-
   double offset = -1.0 * speed * ms / 1000. * led_count;
 
-  // uint16_t  offset = pixels_per_second * ms / 1000 * 0xffff / led_count;
-  //  auto rand_light = rand() % led_count;
-  double ratio = cycles / led_count * 0xffff;
+  double ratio = cycles / led_count;
   for (int i = 0; i < led_count; ++i) {
-    uint16_t hue = fabs(fmod((i + offset) * ratio, 0xffff));  // 0-0xffff
-    auto color = ColorHSV(hue, saturation, brightness);
+    float hue = fabs(fmod((i + offset) * ratio * 360, 360.));  // 0-360
+    auto color = HSVtoRGB(hue, saturation/255., brightness/255.);
     leds[i]=color;
   }
 }
