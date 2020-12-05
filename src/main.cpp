@@ -144,7 +144,7 @@ enum LightMode {
   mode_strobe,
   mode_twinkle,
   mode_stripes,
-  mode_color,
+  mode_normal,
   mode_flicker,
   mode_last = mode_flicker
 };
@@ -203,7 +203,7 @@ const char * light_mode_name(LightMode mode) {
     case mode_stripes:
       return "stripes";
 
-    case mode_color:
+    case mode_normal:
       return "normal";
 
     case mode_flicker:
@@ -517,7 +517,7 @@ void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
-void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_color); }
+void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); }
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); }
 void cmd_off(CommandEnvironment &env) { lights_on = false; }
 void cmd_on(CommandEnvironment &env) { lights_on = true; }
@@ -960,6 +960,11 @@ double percent_lights_for_percent_up_tree(double h) {
   return 2*(h-((h*h)/2));
 }
 
+double percent_up_tree_for_percent_lights(double l) {
+  l=clamp(l,0.,1.);
+  return 1 - sqrt(1-l);
+}
+
 void gradient(bool is_tree = true) {
   size_t n_colors =  current_colors.size();
   int divisions = (n_colors < 2) ? 1: n_colors -1;
@@ -1345,25 +1350,38 @@ void off() {
   }
 }
 
+void stripes2(std::vector<Color> colors, bool is_tree = false) {
+  auto ms = clock_millis();
+  
+  double start_color = -1.0 * speed * ms / 1000. * colors.size();
+  for (int i = 0; i < led_count; ++i) {
+    auto f = (double)i/led_count;
+    auto p = is_tree?percent_up_tree_for_percent_lights((double)i/led_count) : f;
+    auto n_color = int(start_color + p * colors.size() * cycles)%colors.size();
+    leds[i]=colors[n_color];
+  }
+
+}
+
 void stripes(std::vector<Color> colors, bool is_tree = false) {
   if(led_count==0) {
     return;
   }
   size_t n_color = 0;
-  double ratio_end = (n_color+1.0) / colors.size();
+  double ratio_end = (n_color+1.0) / colors.size() / cycles;
   double led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
   for (int i = 0; i < led_count; ++i) {
     if(i > led_end) {
       ++n_color;
-      ratio_end = (n_color+1.0) / colors.size();
+      ratio_end = (n_color+1.0) / colors.size() / cycles;
       led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
     }
-    auto color = colors[clamp<size_t>(n_color,0,colors.size()-1)];
+    auto color = colors[clamp<size_t>(n_color%colors.size(),0,colors.size()-1)];
     leds[i]=color;
   }
 }
 
-void repeat(std::vector<Color> colors, uint16_t repeat_count = 1) {
+void normal(std::vector<Color> colors, uint16_t repeat_count = 1) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / repeat_count) % colors.size()];
     leds[i]=color;
@@ -1516,7 +1534,7 @@ void loop() {
           strobe();
           break;
         case mode_stripes:
-          stripes(current_colors, is_tree);
+          stripes2(current_colors, is_tree);
           break;
         case mode_twinkle:
           twinkle();
@@ -1530,8 +1548,8 @@ void loop() {
         case mode_pattern1:
           pattern1();
           break;
-        case mode_color:
-          repeat(current_colors);
+        case mode_normal:
+          normal(current_colors);
           break;
         case mode_flicker:
           flicker(current_colors);
@@ -1542,7 +1560,7 @@ void loop() {
     }
 
     // rotate
-    if(light_mode != mode_rainbow ) {
+    if(light_mode != mode_rainbow && light_mode != mode_stripes ) {
       rotate();
     }
 
