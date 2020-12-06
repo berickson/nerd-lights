@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <queue>
+#include <array>
 
 //#include "OLEDDisplay.h"
 #include "SSD1306Wire.h"
@@ -60,7 +61,6 @@ union Color {
     uint32_t num;
 };
 
-Color leds[1000];
 
 
 
@@ -76,6 +76,8 @@ bool is_tree = false;
 
 const int pin_command_button = 0; // built in command button
 Pushbutton command_button(pin_command_button, 0);
+
+std::array<Color, max_led_count> leds;
 
 
 
@@ -682,9 +684,15 @@ void cmd_set_led_count(CommandEnvironment &env) {
       env.cerr.printf("failed - led_count must be one or more");
       return;
     }
+
+    if (v >= max_led_count) {
+      env.cerr.printf("failed - led_count must not be more that %d", max_led_count);
+      return;
+    }
+    
     // clear existing leds
-    for(int i=0;i<sizeof(leds)/sizeof(leds[0]);++i) {
-      leds[i]=Color(0,0,0);
+    for(auto & led : leds) {
+      led = Color(0,0,0);
     }
     update_pixels();
     led_count = v;
@@ -1415,7 +1423,7 @@ void explosion() {
   }
 }
 
-void stripes(std::vector<Color> colors, bool is_tree = false) {
+void stripes(const std::vector<Color> & colors, bool is_tree = false) {
   auto ms = clock_millis();
   
   double start_color = -1.0 * speed * ms / 1000. * colors.size();
@@ -1428,14 +1436,14 @@ void stripes(std::vector<Color> colors, bool is_tree = false) {
 
 }
 
-void normal(std::vector<Color> colors, uint16_t repeat_count = 1) {
+void normal(const std::vector<Color> & colors, uint16_t repeat_count = 1) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / repeat_count) % colors.size()];
     leds[i]=color;
   }
 }
 
-void flicker(std::vector<Color> colors) {
+void flicker(const std::vector<Color> & colors) {
   for (int i = 0; i < led_count; ++i) {
     if(rand()%5==0) {
 
