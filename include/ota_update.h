@@ -133,8 +133,6 @@ void do_ota_upgrade(String host, int port, String bin, int command = U_FLASH) {
         Serial.println("OTA done!");
         if (Update.isFinished()) {
           Serial.println("Update successfully completed. Rebooting.");
-          delay(1000);
-          ESP.restart();
         } else {
           Serial.println("Update not finished? Something went wrong!");
         }

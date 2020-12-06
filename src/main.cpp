@@ -30,6 +30,8 @@
 const char * pref_do_ota_on_boot = "ota_firmware";
 const char * pref_do_ota_spiffs_on_boot = "ota_spiffs";
 
+bool enable_pixel_update = false;
+
 
 template< typename T, size_t N >
 inline size_t dim( T (&arr)[N] ) { return N; }
@@ -65,6 +67,7 @@ Color leds[1000];
 
 // globals
 const int pin_strand_1 = 5 ;
+const int max_led_count = 1000;
 int led_count = 10;
 int max_current = 500;
 String device_name="nerdlights";
@@ -89,7 +92,7 @@ strand_t STRANDS[] = {{.rmtChannel = 2,
                        .gpioNum = pin_strand_1,
                        .ledType = LED_WS2812B_V3,
                        .brightLimit = 24,
-                       .numPixels = led_count}};
+                       .numPixels = max_led_count}};
 const int STRANDCNT = sizeof(STRANDS) / sizeof(STRANDS[0]);
 
 strand_t *strands[8];
@@ -213,10 +216,52 @@ const char * light_mode_name(LightMode mode) {
 }
 
 
+void update_pixels() {
+  #if defined(use_fastled)
+    for(int i=0;i<led_count;++i) {
+        fast_leds[i] = CRGB(leds[i].r, leds[i].g, leds[i].b);
+    }
+    FastLED.show();
+  #else
+    for(int i=0;i<led_count;++i) {
+        auto &p = strands[0]->pixels[i];
+        p.num = leds[i];
+        std::swap(p.g, p.b);
+        std::swap(p.r, p.b);
+    }
+    digitalLeds_drawPixels(strands, STRANDCNT);
+  #endif
+
+  delay(20);
+}
+
+void off() { 
+  for(int i=0; i < led_count; ++i) {
+    leds[i]=Color(0,0,0);
+  }
+}
+
+
+void blacken_pixels() {
+  lights_on = false;
+  off();
+  update_pixels();
+}
+
+
 void cmd_do_ota_upgrade(CommandEnvironment & env) {
+
   preferences.begin("main");
   preferences.putBool(pref_do_ota_on_boot,true);
   preferences.end();
+
+  blacken_pixels();
+
+  display.clear();
+  display.drawString(0,0,"Restarting to");
+  display.drawString(0,10,"firmware upgrade");
+  display.display();
+
   Serial.println("Restarting to perform firmware upgrade");
   delay(500);
   ESP.restart();
@@ -226,6 +271,10 @@ void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
   preferences.begin("main");
   preferences.putBool(pref_do_ota_spiffs_on_boot,true);
   preferences.end();
+
+  blacken_pixels();
+
+
   Serial.println("Restarting to perform SPIFFS upgrade");
   delay(500);
   ESP.restart();
@@ -271,6 +320,9 @@ void cmd_status(CommandEnvironment & env) {
   o.print(device_name);
   o.println("\",");
 
+  o.print("\"firmware_version\":\"" __DATE__ " " __TIME__ );
+  o.println("\",");
+
 
   o.print("\"light_mode\":\"");
   o.print(light_mode_name(light_mode));
@@ -294,6 +346,10 @@ void cmd_status(CommandEnvironment & env) {
 
   o.print("\"lights_on\":");
   o.print(lights_on ? "true" : "false");
+  o.println(",");
+
+  o.print("\"is_tree\":");
+  o.print(is_tree ? "true" : "false");
   o.println(",");
 
   o.print("\"ssid\":\"");
@@ -641,6 +697,7 @@ void cmd_set_tree_mode(CommandEnvironment &env) {
   env.cout.println(is_tree);
 }
 
+
 void cmd_set_led_count(CommandEnvironment &env) {
   if (env.args.getParamCount() > 1) {
     env.cerr.printf("failed - requires one parameter");
@@ -652,6 +709,11 @@ void cmd_set_led_count(CommandEnvironment &env) {
       env.cerr.printf("failed - led_count must be one or more");
       return;
     }
+    // clear existing leds
+    for(int i=0;i<sizeof(leds)/sizeof(leds[0]);++i) {
+      leds[i]=Color(0,0,0);
+    }
+    update_pixels();
     led_count = v;
     preferences.begin("main");
     preferences.putInt("led_count", led_count);
@@ -659,7 +721,11 @@ void cmd_set_led_count(CommandEnvironment &env) {
 #if defined(use_fastled)
     FastLED.addLeds<WS2812, pin_strand_1, RGB>(fast_leds, led_count);
 #else
+    digitalLeds_resetPixels(strands, STRANDCNT);
+    digitalLeds_removeStrands(strands, STRANDCNT);
     STRANDS[0].numPixels = led_count;
+    digitalLeds_addStrands(strands, STRANDCNT);
+
 #endif
     // strip.updateLength(led_count);
   }
@@ -726,6 +792,14 @@ void cmd_scan_networks(CommandEnvironment & env) {
 
 
 void do_ota_upgrade(bool upgrade_spiffs = false) {
+  init_display();
+  // prepare oled display
+  display.clear();
+  display.drawString(0, 0, "performing ota upgrade");
+  display.display();
+
+
+
   Serial.println("Performing OTA upgrade");
   
   preferences.begin("main", true);
@@ -736,22 +810,48 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
   WiFi.begin(ssid.c_str(), password.c_str());
 
   // Wait for connection to establish
+  const uint32_t connect_timeout_ms = 30000;
+  auto start_time = millis();
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print("."); // Keep the serial monitor lit!
+    auto elapsed = millis()-start_time;
+    if(elapsed > connect_timeout_ms) {
+      display.clear();
+      display.drawString(0,0,"Upgrade failed WiFi");
+      display.drawString(0,10,"rebooting...");
+      display.display();
+      delay(2000);
+      ESP.restart();
+    }
     delay(500);
   }
   Serial.println("connected, doing upgrade");
   if(upgrade_spiffs) {
+    display.clear();
+    display.drawString(0,0,"Upgrading SPIFFS");
+    display.display();
     Serial.println("Upgrading SPIFFS");
     do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/spiffs.bin",U_SPIFFS);
   } else {
     Serial.println("Upgrading firmware");
+    display.clear();
+    display.drawString(0,0,"Upgrading Firmware");
+    display.display();
     do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/firmware.bin");
-  }
-  while(true) {
-    vTaskDelay(0);// pump messages
+
+    preferences.begin("main");
+    preferences.putBool(pref_do_ota_spiffs_on_boot,true);
+    preferences.end();
+    Serial.println("Restarting to perform SPIFFS upgrade");
+    delay(500);
   }
 
+  display.clear();
+  display.drawString(0,0,"restarting");
+  display.display();
+  delay(100);
+
+  ESP.restart();
 }
 
 void setup() {
@@ -1344,11 +1444,6 @@ void explosion() {
 
 
 
-void off() { 
-  for(int i=0; i < led_count; ++i) {
-    leds[i]=black;
-  }
-}
 
 void stripes2(std::vector<Color> colors, bool is_tree = false) {
   auto ms = clock_millis();
@@ -1586,23 +1681,7 @@ void loop() {
       }
     }
 
-    for(int i=0;i<led_count;++i) {
-#if defined(use_fastled)
-      fast_leds[i] = CRGB(leds[i].r, leds[i].g, leds[i].b);
-#else
-      auto &p = strands[0]->pixels[i];
-      p.num = leds[i];
-      std::swap(p.g, p.b);
-      std::swap(p.r, p.b);
-#endif
-    }
-
-#if defined(use_fastled)
-    FastLED.show();
-#else
-    digitalLeds_drawPixels(strands, STRANDCNT);
- #endif
-
+    update_pixels();
   }
 
   delay(10);
