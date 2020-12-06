@@ -835,6 +835,8 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
   ESP.restart();
 }
 
+
+
 void setup() {
   Serial.begin(921600);
   Serial.println();
@@ -1469,6 +1471,7 @@ void flicker(const std::vector<Color> & colors) {
     }
   }
 }
+
 
 #include "HTTPClient.h"
 

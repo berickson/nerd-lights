@@ -1,4 +1,3 @@
-black out remaining lights when changing ledcount, when clearing lights, probably best to clear way more than you need, say 1024
 Easy to follow instructions from device
 on-device menu and screen blanking
 Show web page as a reasonable size on desktop (currently huge)
@@ -33,6 +32,7 @@ Find and control local devices from single page
 done
 
 -----------
+black out remaining lights when changing ledcount, when clearing lights, probably best to clear way more than you need, say 1024
 cycles should apply to more modes like stripes
 flicker button
 - remove black setting and just have it do a random mix of supplied colors?
