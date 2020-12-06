@@ -122,18 +122,10 @@ template<class T> T clamp(T v, T min, T max) {
 
 }
 
-uint32_t mix_colors(uint32_t c1, uint32_t c2, float part2) {
+Color mix_colors(Color c1, Color c2, float part2) {
   part2 = clamp<float>(part2, 0., 1.);
   float part1 = 1-part2;
-  auto r1 = (c1 & 0xff0000)>>16;
-  auto g1 = (c1 & 0xff00)>>8;
-  auto b1 = c1 & 0xff;
-  auto r2 = (c2 & 0xff0000)>>16;
-  auto g2 = (c2 & 0xff00)>>8;
-  auto b2 = c2 & 0xff;
-  uint32_t color = (uint32_t(r1*part1+r2*part2+0.5)<<16) + (uint32_t(g1*part1+g2*part2+0.5)<<8) +  (uint32_t(b1*part1+b2*part2+0.5));
-
-  return color;
+  return Color(c1.r*part1+c2.r*part2+0.5, c1.g*part1+c2.g*part2+0.5, c1.b*part1+c2.b*part2+0.5);
 }
 
 
@@ -155,25 +147,6 @@ enum LightMode {
 LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
 uint8_t brightness = 50;
-
-// Parameter 1 = number of pixels in strip
-// Parameter 2 = Arduino pin number (most are valid)
-// Parameter 3 = pixel type flags, add together as needed:
-//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
-//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
-//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
-//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-
-// IMPORTANT: To reduce NeoPixel burnout risk, add 1000 uF capacitor across
-// pixel power leads, add 300 - 500 Ohm resistor on first pixel's data input
-// and minimize distance between Arduino and first pixel.  Avoid connecting
-// on a live circuit...if you must, connect GND first.
-
-constexpr int16_t degrees_to_hex(int32_t degrees) {
-  return (degrees % 360) * 0xffff / 360;
-}
-
 
 std::vector<Color> unscaled_colors = {Color(15, 15, 15)};
 std::vector<Color> current_colors = {Color(15, 15, 15)};
@@ -1442,10 +1415,7 @@ void explosion() {
   }
 }
 
-
-
-
-void stripes2(std::vector<Color> colors, bool is_tree = false) {
+void stripes(std::vector<Color> colors, bool is_tree = false) {
   auto ms = clock_millis();
   
   double start_color = -1.0 * speed * ms / 1000. * colors.size();
@@ -1456,24 +1426,6 @@ void stripes2(std::vector<Color> colors, bool is_tree = false) {
     leds[i]=colors[n_color];
   }
 
-}
-
-void stripes(std::vector<Color> colors, bool is_tree = false) {
-  if(led_count==0) {
-    return;
-  }
-  size_t n_color = 0;
-  double ratio_end = (n_color+1.0) / colors.size() / cycles;
-  double led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
-  for (int i = 0; i < led_count; ++i) {
-    if(i > led_end) {
-      ++n_color;
-      ratio_end = (n_color+1.0) / colors.size() / cycles;
-      led_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(ratio_end) : ratio_end);
-    }
-    auto color = colors[clamp<size_t>(n_color%colors.size(),0,colors.size()-1)];
-    leds[i]=color;
-  }
 }
 
 void normal(std::vector<Color> colors, uint16_t repeat_count = 1) {
@@ -1558,16 +1510,6 @@ void loop() {
     download_program();
   }
 
-/*
-  if(every_n_ms(last_loop_ms, loop_ms, 1000)) {
-    for(int i=0;i<32;++i) {
-    Serial.printf("D%d: %d ",i, digitalRead(i));
-    }
-    Serial.println();
-  }
-*/  
-  
-
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
     display.drawString(0, 0, "name: " + device_name);
@@ -1629,7 +1571,7 @@ void loop() {
           strobe();
           break;
         case mode_stripes:
-          stripes2(current_colors, is_tree);
+          stripes(current_colors, is_tree);
           break;
         case mode_twinkle:
           twinkle();
