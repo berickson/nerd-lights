@@ -238,6 +238,23 @@ function update_saturation(v) {
     document.getElementById('saturation_value').innerHTML = v.toString();
 }
 
+function on_devices_update(e) {
+    let response = JSON.parse(e.target.response);
+    if(response.success) {
+        let div = document.getElementById("devices_div");
+        div.innerHTML="";
+        
+        response.devices.sort((a,b)=>a.hostname<b.hostname);
+
+        for(const device of response.devices) {
+            let button = document.createElement("button");
+            button.setAttribute("onmousedown", "window.location.href='"+"http://"+device.ip_address+"'");
+            button.innerText = device.hostname;
+            div.appendChild(button);
+        }
+    }
+ 
+}
 
 
 function on_status_update(e) {
@@ -275,6 +292,10 @@ function on_status_update(e) {
     document.getElementById("strobe_button").setAttribute("active", status.light_mode == "strobe");
     document.getElementById("flicker_button").setAttribute("active", status.light_mode == "flicker");
 
+}
+
+function update_devices() {
+    command("get_nearby_devices", on_devices_update);
 }
 
 function update_status() {

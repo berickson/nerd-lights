@@ -23,8 +23,11 @@
 
         <script src="index.js"></script> 
 
-        <h1 id="page_title">Nerd Lights</h1>
-        <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button>
+        <h1> <span id="page_title">Nerd Lights</span> <span id="devices_div"></span></h1>
+        
+        <div>
+        <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button> 
+        </div>
 
         <h2>Effects</h2>
         <button id="normal_button" onmousedown="command('normal', update_status)">normal</button>
@@ -92,6 +95,8 @@
     </body>
     <script>
         update_status();
+        update_devices();
+        window.setInterval(update_devices, 10000);
         var color_picker = new iro.ColorPicker('#color-picker');
 
 
