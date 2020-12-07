@@ -238,13 +238,19 @@ function update_saturation(v) {
     document.getElementById('saturation_value').innerHTML = v.toString();
 }
 
+function compare_strings(a,b) {
+    if(a==b) return 0;
+    if(a<b) return -1;
+    return 1;
+}
+
 function on_devices_update(e) {
     let response = JSON.parse(e.target.response);
     if(response.success) {
         let div = document.getElementById("devices_div");
         div.innerHTML="";
         
-        response.devices.sort((a,b)=>a.hostname<b.hostname);
+        response.devices.sort((a,b)=> compare_strings(a.hostname.toLowerCase(),b.hostname.toLowerCase()));
 
         for(const device of response.devices) {
             let button = document.createElement("button");

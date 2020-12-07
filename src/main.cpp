@@ -285,7 +285,7 @@ void cmd_get_nearby_devices(CommandEnvironment & env) {
   StaticJsonDocument<doc_capacity> doc;
   mdns_result_t * results = nullptr;
 
-  esp_err_t err = mdns_query_ptr("_nerd_lights", "_tcp", 2000, 20,  &results);
+  esp_err_t err = mdns_query_ptr("_nerd_lights", "_tcp", 3000, 20,  &results);
   if(err) {
      env.cerr.println("failed querying mdns");
      doc["success"]=0;
