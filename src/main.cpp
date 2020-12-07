@@ -223,6 +223,113 @@ void blacken_pixels() {
   update_pixels();
 }
 
+static const char * if_str[] = {"STA", "AP", "ETH", "MAX"};
+static const char * ip_protocol_str[] = {"V4", "V6", "MAX"};
+
+void mdns_print_results(mdns_result_t * results){
+    mdns_result_t * r = results;
+    mdns_ip_addr_t * a = NULL;
+    int i = 1, t;
+    while(r){
+        Serial.printf("%d: Interface: %s, Type: %s\n", i++, if_str[r->tcpip_if], ip_protocol_str[r->ip_protocol]);
+        if(r->instance_name){
+            Serial.printf("  PTR : %s\n", r->instance_name);
+        }
+        if(r->hostname){
+            Serial.printf("  SRV : %s.local:%u\n", r->hostname, r->port);
+        }
+
+        if(r->txt_count){
+            Serial.printf("  TXT : [%u] ", r->txt_count);
+            for(t=0; t<r->txt_count; t++){
+                Serial.printf("%s=%s; ", r->txt[t].key, r->txt[t].value);
+            }
+            Serial.printf("\n");
+        }
+        a = r->addr;
+        while(a){
+            if(a->addr.type == IPADDR_TYPE_V6){
+                Serial.printf("  AAAA: " IPV6STR "\n", IPV62STR(a->addr.u_addr.ip6));
+            } else {
+                Serial.printf("  A   : " IPSTR "\n", IP2STR(&(a->addr.u_addr.ip4)));
+            }
+            a = a->next;
+        }
+        r = r->next;
+    }
+
+}
+
+void find_mdns_service(const char * service_name, const char * proto)
+{
+    Serial.printf("Query PTR: %s.%s.local\n", service_name, proto);
+
+    mdns_result_t * results = NULL;
+    esp_err_t err = mdns_query_ptr(service_name, proto, 3000, 20,  &results);
+    if(err){
+        Serial.println("Query Failed");
+        return;
+    }
+    if(!results){
+        Serial.println("No results found!");
+        return;
+    }
+
+    mdns_print_results(results);
+    mdns_query_results_free(results);
+}
+
+
+void cmd_get_nearby_devices(CommandEnvironment & env) {
+  const int doc_capacity = 5000;
+  StaticJsonDocument<doc_capacity> doc;
+  mdns_result_t * results = nullptr;
+
+  esp_err_t err = mdns_query_ptr("_nerd_lights", "_tcp", 3000, 20,  &results);
+  if(err) {
+     env.cerr.println("failed querying mdns");
+     doc["success"]=0;
+  } else {
+    doc["success"]=1;
+    mdns_result_t * r = results;
+    mdns_ip_addr_t * a = NULL;
+    JsonArray device_array = doc.createNestedArray("devices");
+    while(r){
+      auto device_json = device_array.createNestedObject();
+      device_json["interface"]=if_str[r->tcpip_if];
+      device_json["protocol"]=ip_protocol_str[r->ip_protocol];
+
+      if(r->instance_name){
+        device_json["instance_name"] = r->instance_name;
+      }
+      if(r->hostname){
+        device_json["hostname"] = r->hostname;
+        device_json["port"] = r->port;
+      }
+
+      if(r->txt_count){
+          for(int t=0; t<r->txt_count; t++){
+            device_json[r->txt[t].key]=r->txt[t].value;
+          }
+      }
+      a = r->addr;
+      if(a){
+          char address_string[20];
+          if(a->addr.type == IPADDR_TYPE_V6){
+            snprintf(address_string, 19, IPV6STR,IPV62STR(a->addr.u_addr.ip6));
+            device_json["ipv6"]= address_string;
+          } else {
+            snprintf(address_string, 19, IPSTR,IP2STR(&(a->addr.u_addr.ip4)));
+            device_json["ip_address"] =  address_string;
+          }
+          // a = a->next; // could be multiple, but only want one
+      }
+      r = r->next;
+    }
+    mdns_query_results_free(results);
+  }
+  serializeJson(doc, env.cout);
+}
 
 void cmd_do_ota_upgrade(CommandEnvironment & env) {
 
@@ -955,6 +1062,8 @@ void setup() {
     Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
   commands.emplace_back(
     Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
+  commands.emplace_back(
+    Command("get_nearby_devices", cmd_get_nearby_devices, "use network discover to find nearby Nerd Lights"));
   commands.emplace_back(
     Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected)"));
 
