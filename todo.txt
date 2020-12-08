@@ -1,3 +1,4 @@
+
 Easy to follow instructions from device
 on-device menu and screen blanking
 Show web page as a reasonable size on desktop (currently huge)
@@ -21,17 +22,13 @@ hook to alexa / google.
 timer / schedule
 
 
-
-
-Find and control local devices from single page
-    https://www.megunolink.com/articles/wireless/find-esp32-esp8266-ip-address-with-mdns/
-    https://github.com/watson/bonjour
-    each unit uniquely identified by its MAC id. (esp_efuse_mac_get_default)
-
-
 done
 
 -----------
+Find and control local devices from single page
+    https://www.megunolink.com/articles/wireless/find-esp32-esp8266-ip-address-with-mdns/
+    https://github.com/watson/bonjour
+AP - each unit uniquely identified by its MAC id. (esp_efuse_mac_get_default)
 black out remaining lights when changing ledcount, when clearing lights, probably best to clear way more than you need, say 1024
 cycles should apply to more modes like stripes
 flicker button
