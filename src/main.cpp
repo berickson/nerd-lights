@@ -1314,9 +1314,16 @@ void rotate() {
 
     float f_pos = fmod(fabs(i+offset), led_count);
     int i_temp = floor(f_pos);
+    i_temp = clamp(i_temp, 0, led_count-1);
     int i_temp2 = i_temp + 1;
     if(i_temp2 >= led_count) i_temp2 = 0;
     float part_2 = f_pos - i_temp;
+    if(i_temp < 0 || i_temp >= led_count) {
+      Serial.printf("Error: offset: %f i_temp:%d i:%d led_count:%d f_pos:%f\n",offset,i_temp,i,led_count,f_pos);
+    }
+    if(i_temp2 < 0 || i_temp2 >= led_count) {
+      Serial.printf("Error: offset: %f i_temp2:%d i:%d led_count:%d f_pos:%f\n",offset, i_temp,i,led_count,f_pos);
+    }
     leds[i] =  mix_colors(strip_copy[i_temp], strip_copy[i_temp2], part_2);
   }
 }
