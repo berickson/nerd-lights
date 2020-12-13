@@ -1,4 +1,5 @@
-
+send to
+segments
 Easy to follow instructions from device
 on-device menu and screen blanking
 Show web page as a reasonable size on desktop (currently huge)
