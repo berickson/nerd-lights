@@ -1616,6 +1616,14 @@ void download_program() {
   }
 }
 
+bool is_wifi_connected_to_internet() {
+    struct tm timeinfo;
+    if(getLocalTime(&timeinfo)){
+      return true;
+    }
+    return false;
+}
+
 void loop() {
   static unsigned long loop_count = 0;
   ++loop_count;
@@ -1639,30 +1647,47 @@ void loop() {
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
-    display.drawString(0, 0, "name: " + device_name);
-    
-    String ssid = WiFi.isConnected() ? wifi_task.ssid : "nerdlights";
-    display.drawString(0, 10, (String) "SSID: " + ssid);
-    
-
-    IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
-    display.drawString(0, 20, ip_address.toString());
-
-    display.drawString(0, 30, "v0.4");
+    char buff[80];
+    if(is_wifi_connected_to_internet()) {
+      // we are connected
+      display.drawString(0, 0, "name: " + device_name);
       
-    struct tm timeinfo;
-    if(!getLocalTime(&timeinfo)){
-      display.drawString(0,40,"wifi not connected");
-    } else {
+      String ssid = WiFi.isConnected() ? wifi_task.ssid : "nerdlights";
+      display.drawString(0, 10, (String) "SSID: " + ssid);
       
-      char buff[80];
+
+      IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
+      display.drawString(0, 20, ip_address.toString());
+
+      display.drawString(0, 30, "v0.4");
+        
+      struct tm timeinfo;
+      if(!getLocalTime(&timeinfo)){
+        display.drawString(0,40,"wifi not connected");
+      }
+
+        
       sprintf(buff, "%d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
       display.drawString(0, 40, buff);
-    }
 
-    char buff[80];
-    sprintf(buff, "free: %d",ESP.getFreeHeap());
-    display.drawString(0,50,buff);
+      sprintf(buff, "free: %d",ESP.getFreeHeap());
+      display.drawString(0,50,buff);
+    } else {
+
+      // device isn't connected to internet, show instructions to connect
+      sprintf(buff,"To configure, connect to");
+      display.drawString(0,0, buff);
+      sprintf(buff," WiFi SSID");
+      display.drawString(0,10, buff);
+      sprintf(buff,"%s",ap_ssid.c_str());
+      display.drawString(0,20, buff);
+      sprintf(buff,"(no password)");
+      display.drawString(0,30, buff);
+      sprintf(buff,"then browse to");
+      display.drawString(0,40, buff);
+      sprintf(buff,"http://%s",WiFi.softAPIP().toString().c_str());
+      display.drawString(0,50, buff);
+    }
 
     display.display();
   }
