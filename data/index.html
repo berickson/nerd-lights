@@ -23,7 +23,7 @@
 
         <script src="index.js"></script> 
 
-        <h1> <span id="page_title">Nerd Lights</span> <span id="devices_div"></span></h1>
+        <h1> <div id="page_title">Nerd Lights</div> <div id="devices_div"></div></h1>
         
         <div>
         <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button> 
@@ -45,6 +45,9 @@
         <button onmousedown="multi_command(['color 5 5 30','add 0 0 255','add 0 0 255','add 100 100 100','twinkle'])">icy</button>
         <button onmousedown="multi_command(['color 0 0 0','add 255 255 0','twinkle'])">fireflies</button>
         <button onmousedown="multi_command(['color 255 0 0','add 255 191 0','add 255 191 0','flicker'])">candle</button>
+        <button onmousedown="command('set_program {&quot;light_mode&quot;:0,&quot;brightness&quot;:222,&quot;saturation&quot;:255,&quot;cycles&quot;:1,&quot;speed&quot;:0,&quot;colors&quot;:[{&quot;r&quot;:36,&quot;g&quot;:24,&quot;b&quot;:0},{&quot;r&quot;:191,&quot;g&quot;:159,&quot;b&quot;:0},{&quot;r&quot;:19,&quot;g&quot;:19,&quot;b&quot;:223},{&quot;r&quot;:255,&quot;g&quot;:64,&quot;b&quot;:0},{&quot;r&quot;:19,&quot;g&quot;:255,&quot;b&quot;:19},{&quot;r&quot;:255,&quot;g&quot;:0,&quot;b&quot;:0},{&quot;r&quot;:255,&quot;g&quot;:138,&quot;b&quot;:34}]}', update_status)">pop</button>
+
+        
 
         <h2>Current Colors</h2>
         <div id="current-colors"></div>
