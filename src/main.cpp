@@ -1647,16 +1647,29 @@ void loop() {
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
     display.clear();
+    
     char buff[80];
+
     if(is_wifi_connected_to_internet()) {
       // we are connected
-      display.drawString(0, 0, "name: " + device_name);
-      
-      String ssid = WiFi.isConnected() ? wifi_task.ssid : "nerdlights";
-      display.drawString(0, 10, (String) "SSID: " + ssid);
-      
+      sprintf(buff, "Nerd Lights - %s", device_name.c_str());
+      display.drawString(0, 0, buff);
 
-      IPAddress ip_address = WiFi.isConnected() ? WiFi.localIP() : WiFi.softAPIP();
+      sprintf(buff,"Connected to %s", wifi_task.ssid.c_str());
+      display.drawString(0, 10, buff);
+      
+      sprintf(buff,"to control your lights,");
+      display.drawString(0, 20, buff);
+
+      sprintf(buff,"browse to ");
+      display.drawString(0, 30, buff);
+
+      sprintf(buff, "http://%s", WiFi.localIP().toString().c_str());
+      display.drawString(0, 40, buff);
+
+/*
+Below stuff would be good for a config page
+      IPAddress ip_address = ;
       display.drawString(0, 20, ip_address.toString());
 
       display.drawString(0, 30, "v0.4");
@@ -1672,21 +1685,20 @@ void loop() {
 
       sprintf(buff, "free: %d",ESP.getFreeHeap());
       display.drawString(0,50,buff);
+*/
     } else {
 
       // device isn't connected to internet, show instructions to connect
-      sprintf(buff,"To configure, connect to");
+      sprintf(buff,"No Internet");
       display.drawString(0,0, buff);
-      sprintf(buff," WiFi SSID");
+      sprintf(buff,"Connect your WiFi to");
       display.drawString(0,10, buff);
       sprintf(buff,"%s",ap_ssid.c_str());
       display.drawString(0,20, buff);
-      sprintf(buff,"(no password)");
-      display.drawString(0,30, buff);
       sprintf(buff,"then browse to");
-      display.drawString(0,40, buff);
+      display.drawString(0,30, buff);
       sprintf(buff,"http://%s",WiFi.softAPIP().toString().c_str());
-      display.drawString(0,50, buff);
+      display.drawString(0,40, buff);
     }
 
     display.display();

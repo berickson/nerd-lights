@@ -312,6 +312,7 @@ function on_network_connect_click() {
     let ssid = get_selected_ssid();
     let password = document.getElementById('network_password').value;
     command('set_wifi_config '+ssid+' '+password);
+    window.alert("Your WiFi configuration as been sent to your Nerd Lights and they will now connect to internet. You can reconnect to your home WiFi and then browse to the address shown your Nerd Light's display");
 }
 
 function scan_networks() {
