@@ -67,6 +67,7 @@ union Color {
 
 // globals
 const int pin_strand_1 = 5 ;
+const int pin_white_led = 25;
 const int max_led_count = 1000;
 int led_count = 10;
 int max_current = 500;
@@ -983,6 +984,9 @@ void setup() {
     }
   }
 
+  pinMode(pin_white_led, OUTPUT);
+  digitalWrite(pin_white_led, LOW);
+
   esp32_common_setup();
   // read preferences
   preferences.begin("main");
@@ -1796,8 +1800,13 @@ Below stuff would be good for a config page
           p.b = mul_div(p.b, max_sum_rgb, sum_rgb);
           leds[i] = p;
         }
-        leds[0]=Color(255,0,0);
-        
+
+        // The white on-board LED is used to indicate overload
+        // condition.
+        // white=overloaded.
+        digitalWrite(pin_white_led, HIGH);
+      } else {
+        digitalWrite(pin_white_led, LOW);
       }
     }
 
