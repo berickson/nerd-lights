@@ -331,6 +331,18 @@ void cmd_get_nearby_devices(CommandEnvironment & env) {
   serializeJson(doc, env.cout);
 }
 
+void cmd_restart (CommandEnvironment & env) {
+  blacken_pixels();
+
+  display.clear();
+  display.drawString(0,0,"Restarting");
+  display.display();
+
+  Serial.println("Restarting");
+  delay(500);
+  ESP.restart();
+}
+
 void cmd_do_ota_upgrade(CommandEnvironment & env) {
 
   preferences.begin("main");
@@ -1062,6 +1074,8 @@ void setup() {
     Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
   commands.emplace_back(
     Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
+  commands.emplace_back(
+    Command("restart", cmd_restart, "restart the device"));
   commands.emplace_back(
     Command("get_nearby_devices", cmd_get_nearby_devices, "use network discover to find nearby Nerd Lights"));
   commands.emplace_back(

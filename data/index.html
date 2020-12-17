@@ -8,9 +8,9 @@
     </head>
     <body>
         <template id="color-button">
-            <span style='display:inline-block;text-align:center;'>
+            <span class = "color-button" style='display:inline-block;text-align:center;'>
             <svg  width="80" height="80">
-                <rect id="color-box" x=5 y=5 width="70" height="70" rx=15 style="fill:rgb(0,0,0);stroke-width:3;stroke:rgb(150,150,150)" />
+                <rect id="color-box" x=5% y=5% width="90%" height="90%" rx=15% style="fill:rgb(0,0,0);stroke:rgb(150,150,150)" />
             </svg>
             <br>
             <span class="small" id='label'></span>
@@ -23,11 +23,16 @@
 
         <script src="index.js"></script> 
 
-        <h1> <div id="page_title">Nerd Lights</div> <div id="devices_div"></div></h1>
+        <h1> <span id="page_title">Nerd Lights</span>        <span style='float:right'>
+            <a href="settings.html">settings</a>
+        </span>
+</h1>
+        <div id="devices_div"></div>
         
         <div>
         <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button> 
         </div>
+
 
         <h2>Effects</h2>
         <button id="normal_button" onmousedown="command('normal', update_status)">normal</button>
@@ -93,8 +98,6 @@
         saturation: <input id='saturation' class='slider' type='range' min="0" max="255" oninput="saturation_input()" onchange="saturation_change()"></input>  <div style='display:inline-block' id='saturation_value'></div><br>
         speed: <input id='speed' class='slider' type='range' min="0" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
         cycles: <input id='cycles'class='slider' type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
-
-        <h2><a href='command_line.html'>Command Line</a></h2>
     </body>
     <script>
         update_status();

@@ -1,8 +1,8 @@
+settings page
 send to
 segments
-Easy to follow instructions from device
 on-device menu and screen blanking
-Show web page as a reasonable size on desktop (currently huge)
+Show web page as a reasonable size on desktop (currently huge, hint use media queries)
 separate config page (or popup from gear icon)
 - device name
 - led count
@@ -10,12 +10,13 @@ separate config page (or popup from gear icon)
 - rgb/grb/etc
 - publish web pattern / follow web pattern
 installable PWA - page from NerdLights.net and lights addresses cached
+gradient shouldn't require setting start and end colors the same for smooth moving.  Hint, extend the "virtual length" automatically.
 captive portal for AP mode
 sliders should initialize on load
 smoothing should be an option
 reset speed after every program change
 gray out or hide unused options
-meteor
+meteor (set colors in pairs)
 tetris
 option for effect density
 rename cycles to repeat, maybe replace by effect length (number of leds)
@@ -28,6 +29,7 @@ timer / schedule
 done
 
 -----------
+Easy to follow instructions from device
 Find and control local devices from single page
     https://www.megunolink.com/articles/wireless/find-esp32-esp8266-ip-address-with-mdns/
     https://github.com/watson/bonjour
