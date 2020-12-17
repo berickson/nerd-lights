@@ -1,13 +1,8 @@
-settings page
 send to
 segments
 on-device menu and screen blanking
-Show web page as a reasonable size on desktop (currently huge, hint use media queries)
-separate config page (or popup from gear icon)
-- device name
-- led count
-- max current
-- rgb/grb/etc
+Config max current
+Config rgb/grb/etc
 - publish web pattern / follow web pattern
 installable PWA - page from NerdLights.net and lights addresses cached
 gradient shouldn't require setting start and end colors the same for smooth moving.  Hint, extend the "virtual length" automatically.
@@ -29,6 +24,11 @@ timer / schedule
 done
 
 -----------
+separate config page (or popup from gear icon)
+- led count
+- device name
+Show web page as a reasonable size on desktop (currently huge, hint use media queries)
+settings page
 Easy to follow instructions from device
 Find and control local devices from single page
     https://www.megunolink.com/articles/wireless/find-esp32-esp8266-ip-address-with-mdns/

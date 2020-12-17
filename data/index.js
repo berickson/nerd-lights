@@ -304,6 +304,7 @@ function on_status_update(e) {
     document.getElementById("off_button").setAttribute("active", !status.lights_on);
     document.getElementById("normal_button").setAttribute("active", status.light_mode == "normal");
     document.getElementById("gradient_button").setAttribute("active", status.light_mode == "gradient");
+    document.getElementById("meteor_button").setAttribute("active", status.light_mode == "meteor");
     document.getElementById("rainbow_button").setAttribute("active", status.light_mode == "rainbow");
     document.getElementById("twinkle_button").setAttribute("active", status.light_mode == "twinkle");
     document.getElementById("pattern1_button").setAttribute("active", status.light_mode == "pattern1");

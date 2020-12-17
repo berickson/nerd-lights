@@ -144,7 +144,8 @@ enum LightMode {
   mode_stripes,
   mode_normal,
   mode_flicker,
-  mode_last = mode_flicker
+  mode_meteor,
+  mode_last = mode_meteor
 };
 
 LightMode light_mode = mode_rainbow;
@@ -169,6 +170,9 @@ const char * light_mode_name(LightMode mode) {
 
     case mode_gradient:
       return "gradient";
+
+    case mode_meteor:
+      return "meteor";
 
     case mode_rainbow:
       return "rainbow";
@@ -665,6 +669,7 @@ void cmd_set_program(CommandEnvironment & env) {
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
 void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
+void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); }
 void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
@@ -955,7 +960,23 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
   ESP.restart();
 }
 
-
+const uint8_t gamma8[] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
 void setup() {
   Serial.begin(921600);
@@ -1029,6 +1050,8 @@ void setup() {
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(
       Command{"gradient", cmd_gradient, "gradual blending of chosen colors"});
+  commands.emplace_back(
+      Command{"meteor", cmd_meteor, "blended pairs of colors, look like meteors when chasing"});
   commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
   commands.emplace_back(Command{"strobe", cmd_strobe, "flashes whole strand at once"});
   commands.emplace_back(Command{"twinkle", cmd_twinkle, "twinkle random lights"});
@@ -1198,6 +1221,37 @@ void gradient(bool is_tree = true) {
     leds[i]=color;
   }
 }
+
+// percent is visual and goes [0,1]
+float gamma_percent(float percent, float gamma = 2.8) {
+  return powf(percent, gamma);
+}
+
+void meteor(bool is_tree = true) {
+  size_t n_colors =  current_colors.size();
+  int divisions = n_colors;
+  int division = 1;
+  double division_start = 0;
+  double percent = (double)division/divisions;
+  double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+
+  //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+  for(int i = 0; i<led_count; ++i) {
+    if(i>division_end) {
+      ++division;
+      division_start = division_end;
+      percent = (double)division/divisions;
+      division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+    }
+    Color color_a = current_colors[division-1];
+    //Color color_b = Color(0,0,0);
+    float percent = 1-(i-division_start)/(division_end-division_start);
+    float part_a = gamma_percent(percent);
+    Color color(color_a.r * part_a, color_a.g*part_a, color_a.b*part_a);
+    leds[i]=color;
+  }
+}
+
 
 void pattern1() {
   auto ms = clock_millis();
@@ -1763,6 +1817,9 @@ Below stuff would be good for a config page
           break;
         case mode_gradient:
           gradient(is_tree);
+          break;
+        case mode_meteor:
+          meteor(is_tree);
           break;
         case mode_pattern1:
           pattern1();
