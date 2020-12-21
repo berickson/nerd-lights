@@ -6,7 +6,7 @@
         <link rel="apple-touch-icon" sizes="128x128" href="niceicon.png">
         <link rel="icon" sizes="192x192" href="vector-icon.svg">
     </head>
-    <body>
+    <body style='user-select: none;'>
         <template id="color-button">
             <span class = "color-button" style='display:inline-block;text-align:center;'>
             <svg  width="80" height="80">
@@ -19,7 +19,7 @@
         <!-- 
             see https://iro.js.org/colorPicker_api.html 
         -->
-        <script src="iro-5-1-8-min.js"></script>
+        <script src="iro-5-3-1-min.js"></script>
 
         <script src="index.js"></script> 
 
@@ -93,19 +93,46 @@
         <button onmousedown="multi_command(['color 255 0 0','add 153 51 51'])">vday</button>
         <button onmousedown="multi_command(['color 255 13 0','add 191 159 0','add 19 19 223','add 255 64 0','add 19 255 19'])">match</button>
         <button onmousedown="multi_command(['color 171 31 0','add 186 74 0','add 163 80 12'])">tday</button>
+        <button onmousedown="multi_command(['color 255 0 0','add 255 81 0','add 255 255 0','add 0 255 4','add 0 0 255','add 111 0 255','add 255 0 132'])">roygbiv</button>
 
         <h2>Tweaks</h2>
-        brightness: <input id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input>  <div style='display:inline-block' id='brightness_value'></div><br>
-        saturation: <input id='saturation' class='slider' type='range' min="0" max="255" oninput="saturation_input()" onchange="saturation_change()"></input>  <div style='display:inline-block' id='saturation_value'></div><br>
-        speed: <input id='speed' class='slider' type='range' min="0" max="100" oninput="speed_input()" onchange="speed_change()"></input>  <div style='display:inline-block' id='speed_value'></div><br>
-        cycles: <input id='cycles'class='slider' type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input> <div style='display:inline-block' id='cycles_value'></div><br>
+        <div style='display:grid;grid-template-columns: max-content auto 200px;max-width:950px;grid-gap: 10px;'>
+          <div class='medium'>brightness:</div>  <div> <input style='width:100%;' id='brightness' class='slider' type='range' min="0" max="255" oninput="brightness_input()" onchange="brightness_change()"></input></div>  <div  style='font-size:12px' id='brightness_value'></div>
+          <div class='medium'>saturation:</div>  <div> <input style='width:100%;' id='saturation' class='slider' type='range' min="0" max="255" oninput="saturation_input()" onchange="saturation_change()"></input></div>  <div   style='font-size:12px' id='saturation_value'></div>
+          <div class='medium'>speed:</div>       <div ><input style='width:100%;' id='speed' class='slider' type='range' min="0" max="100" oninput="speed_input()" onchange="speed_change()"></input></div>                 <div   style='font-size:12px' id='speed_value'></div>
+          <div class='medium'>cycles:</div>      <div> <input style='width:100%;' id='cycles'class='slider' type="range"  min="1" max="100" value="10" oninput="cycles_input()" onchange="cycles_change()"></input></div>   <div   style='font-size:12px' id='cycles_value'></div>
+        </div>
+        
     </body>
     <script>
         update_status();
         update_devices();
         window.setInterval(update_devices, 10000);
-        var color_picker = new iro.ColorPicker('#color-picker');
-
-
+        var color_picker = new iro.ColorPicker('#color-picker', {
+            width: is_mobile_device() ? 600 : 300,
+            layout: [
+                { 
+                    component: iro.ui.Wheel,
+                },
+                { 
+                    component: iro.ui.Slider,
+                    options: {
+                        sliderType:'hue'
+                    }
+                },
+                { 
+                    component: iro.ui.Slider,
+                    options: {
+                        sliderType:'saturation'
+                    }
+                },
+                { 
+                    component: iro.ui.Slider,
+                    options: {
+                        sliderType:'value'
+                    }
+                },        
+            ]
+        });
     </script>
 </html>

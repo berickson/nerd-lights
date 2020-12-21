@@ -155,7 +155,11 @@ function isAlphaNumeric(str) {
     }
     return true;
   };
-
+  
+function is_mobile_device() {
+    let rv  = /Mobi|Android/i.test(navigator.userAgent);
+    return rv;
+}
 function multi_command(commands, onload = null) {
     let s = commands[0];
     let r = new XMLHttpRequest();
@@ -190,66 +194,71 @@ function cycles_input() {
     let cycles_p = parseInt(document.getElementById("cycles").value);
     let cycles = log_scale(cycles_p, 1, 100, 0.01, 10);
     let cycles_str = cycles.toFixed(2);
-    document.getElementById('cycles_value').innerHTML = cycles_str;
+    document.getElementById('cycles_value').innerText = cycles_str;
+    document.getElementById('cycles_value').setAttribute("class", "medium");
 }
 
 function cycles_change() {
-    let v = document.getElementById('cycles_value').innerHTML
+    /*
+    let v = document.getElementById('cycles_value').innerText
     command("cycles "+ v);
+    */
 }
 
 function update_cycles(v) {
+    /*
     document.getElementById("cycles").value = inverse_log_scale(v, 1, 100, 0.01, 10);
-    document.getElementById('cycles_value').innerHTML = v;
+    document.getElementById('cycles_value').innerText = v.toFixed(2);
+    */
 }
 
 function speed_input() {
     let speed_p = parseInt(document.getElementById("speed").value);
     let speed = (speed_p == 0 )? 0 : log_scale(speed_p, 1, 100, 0.001, 1);
     let speed_str = speed.toFixed(3);
-    document.getElementById('speed_value').innerHTML = speed_str;
+    document.getElementById('speed_value').innerText = speed_str;
 }
 
 function speed_change() {
-    let v = document.getElementById('speed_value').innerHTML
+    let v = document.getElementById('speed_value').innerText
     command("speed "+ v);
 }
 
 function update_speed(v) {
-    document.getElementById('speed_value').innerHTML = v.toString();
+    document.getElementById('speed_value').innerText = v.toString();
     document.getElementById("speed").value = (v==0) ? 0 : inverse_log_scale(v, 1, 100, 0.001, 1);
 }
 
 function brightness_input() {
     let brightness = parseInt(document.getElementById("brightness").value);
     let brightness_str = String(brightness);
-    document.getElementById('brightness_value').innerHTML = brightness_str;
+    document.getElementById('brightness_value').innerText = brightness_str;
 }
 
 function brightness_change() {
-    let v = document.getElementById('brightness_value').innerHTML
+    let v = document.getElementById('brightness_value').innerText;
     command("brightness "+ v);
 }
 
 function update_brightness(v) {
     document.getElementById("brightness").value
-    document.getElementById('brightness_value').innerHTML = v.toString();
+    document.getElementById('brightness_value').innerText = v.toString();
 }
 
 function saturation_input() {
     let saturation = parseInt(document.getElementById("saturation").value);
     let saturation_str = String(saturation);
-    document.getElementById('saturation_value').innerHTML = saturation_str;
+    document.getElementById('saturation_value').innerText = saturation_str;
 }
 
 function saturation_change() {
-    let v = document.getElementById('saturation_value').innerHTML
+    let v = document.getElementById('saturation_value').innerText
     command("saturation "+ v);
 }
 
 function update_saturation(v) {
     document.getElementById("saturation").value = v
-    document.getElementById('saturation_value').innerHTML = v.toString();
+    document.getElementById('saturation_value').innerText = v.toString();
 }
 
 function compare_strings(a,b) {
