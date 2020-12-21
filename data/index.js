@@ -199,17 +199,13 @@ function cycles_input() {
 }
 
 function cycles_change() {
-    /*
     let v = document.getElementById('cycles_value').innerText
     command("cycles "+ v);
-    */
 }
 
 function update_cycles(v) {
-    /*
     document.getElementById("cycles").value = inverse_log_scale(v, 1, 100, 0.01, 10);
     document.getElementById('cycles_value').innerText = v.toFixed(2);
-    */
 }
 
 function speed_input() {

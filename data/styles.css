@@ -5,7 +5,19 @@ body {
 }
 button {
   font-size: 36px;
+  background-color: #888888; /* gray */
+  margin-bottom:5px;
+  border-color:white;
+  border: 40px;
+  color: white;
+  padding: 5px 15px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  border-radius: 6px;
 }
+
+
 .color-button > svg {
   width: 80px;
   height: 80px;
@@ -24,24 +36,39 @@ button {
 
 
 
-/* laptops and pcs
+/* laptops and pcs */
 @media not all and (hover:none) {
   body {
-    font-size: 28px;
+    font-size: 14;
   }
 
+  button {
+    font-size: 18px;
+    background-color: #888888; /* gray */
+    margin-bottom:2px;
+    border-color:white;
+    border: 20px;
+    color: white;
+    padding: 2px 7px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    border-radius: 3px;
+  }
+  
   .color-button > svg {
     width: 40px;
     height: 40px;
     stroke-width:2px;
   }
-  .small {
+  .medium {
     font-size:12px;
+  }
+  .small {
+    font-size:10px;
     text-align: center;
   }
-
-
-} */
+}
 
 body, option{
   font-family: Arial;
@@ -81,22 +108,15 @@ a:active {
     width: 36px;
 }
 .slider {
-    width: 400px;
+    width: 100%;
 }
 
-button {
-    background-color: #888888; /* gray */
-    margin-bottom:5px;
-    border-color:white;
-    border: 40px;
-    color: white;
-    padding: 5px 15px;
-    text-align: center;
-    text-decoration: none;
-    display: inline-block;
-    border-radius: 3px;
-
+.tweaks table {
+  width:100%;
+  max-width: 1100px;
+  border-spacing: 20px;
 }
+
 
 button[active="true"] {
   outline: 0;
