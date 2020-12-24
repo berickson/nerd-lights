@@ -25,6 +25,7 @@
 #include <ArduinoJson.h>
 #include "PubSubClient.h"
 
+#include "light_utils.h"
 #include "Pushbutton.h"
 
 #include "ota_update.h" // for OTA update
@@ -138,6 +139,13 @@ Color mix_colors(Color c1, Color c2, float part2) {
   return Color(c1.r*part1+c2.r*part2+0.5, c1.g*part1+c2.g*part2+0.5, c1.b*part1+c2.b*part2+0.5);
 }
 
+
+Color mix_colors_2(Color c1, Color c2, float part2) {
+  h1 = HS
+  part2 = clamp<float>(part2, 0., 1.);
+  float part1 = 1-part2;
+  return Color(c1.r*part1+c2.r*part2+0.5, c1.g*part1+c2.g*part2+0.5, c1.b*part1+c2.b*part2+0.5);
+}
 
 
 // current lighting pattern selected for display
@@ -1355,28 +1363,45 @@ double percent_up_tree_for_percent_lights(double l) {
   return 1 - sqrt(1-l);
 }
 
-void gradient(bool is_tree = true) {
-  size_t n_colors =  current_colors.size();
-  int divisions = (n_colors < 2) ? 1: n_colors -1;
-  int division = 1;
-  double division_start = 0;
-  double percent = (double)division/divisions;
-  double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
 
-  //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+void gradient(bool is_tree = true) {
+
+  size_t n_colors =  current_colors.size();
+  float stretch = n_colors < 2 ? 1.0 : (float)(n_colors-1) / (n_colors);
+  double shift_left = -1.0 * speed * millis() / 1000. * led_count;
+  RepeatingPattern p(led_count, n_colors, stretch, shift_left);
   for(int i = 0; i<led_count; ++i) {
-    if(i>division_end) {
-      ++division;
-      division_start = division_end;
-      percent = (double)division/divisions;
-      division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+    auto r = p.segment_percent(i);
+    if(r.segment >= n_colors) {
+      Serial.printf("Invalid segment r.segment: %d n_colors: %d\n", r.segment, n_colors);
     }
-    uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
-    uint32_t color_b = current_colors[(division)%n_colors];
-    double part_b = (i-division_start)/(division_end-division_start);
-    uint32_t color = mix_colors(color_a, color_b, part_b);
-    leds[i]=color;
+    Color color_a = current_colors[r.segment];
+    Color color_b = current_colors[(r.segment+1)%n_colors];
+    Color color = mix_colors(color_a, color_b, r.percent);
+    leds[i] = color;
   }
+
+  // size_t n_colors =  current_colors.size();
+  // int divisions = (n_colors < 2) ? 1: n_colors -1;
+  // int division = 1;
+  // double division_start = 0;
+  // double percent = (double)division/divisions;
+  // double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+
+  // //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+  // for(int i = 0; i<led_count; ++i) {
+  //   if(i>division_end) {
+  //     ++division;
+  //     division_start = division_end;
+  //     percent = (double)division/divisions;
+  //     division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+  //   }
+  //   uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
+  //   uint32_t color_b = current_colors[(division)%n_colors];
+  //   double part_b = (i-division_start)/(division_end-division_start);
+  //   uint32_t color = mix_colors(color_a, color_b, part_b);
+  //   leds[i]=color;
+  // }
 }
 
 // percent is visual and goes [0,1]
@@ -1467,6 +1492,7 @@ void pattern1() {
     leds[i]=c;
   }
 }
+
 
 // inputs:
 //    h 0-360 s: 0-1 v: 0-1
@@ -1889,6 +1915,7 @@ bool mqtt_subscribed = false;
 
 void loop() {
   static unsigned long loop_count = 0;
+  static unsigned long draw_count = 0;
   ++loop_count;
   static unsigned long last_loop_ms = 0;
   unsigned long loop_ms = clock_millis();
@@ -1931,6 +1958,10 @@ void loop() {
   // every 10 minutes, publish statistics
   if (every_n_ms(last_loop_ms, loop_ms, 10*60*1000)) {
     publish_statistics();
+  }
+
+  if(every_n_ms(last_loop_ms, loop_ms, 1000)) {
+    Serial.printf("draw_count: %lu\n", draw_count);
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
@@ -2012,6 +2043,7 @@ Below stuff would be good for a config page
 
 
   if(every_n_ms(last_loop_ms, loop_ms, 30)) {
+    ++draw_count;
 
     if(lights_on) {
       switch (light_mode) {
@@ -2052,7 +2084,7 @@ Below stuff would be good for a config page
     }
 
     // rotate
-    if(light_mode != mode_rainbow && light_mode != mode_stripes ) {
+    if(light_mode != mode_rainbow && light_mode != mode_stripes && light_mode != mode_gradient) {
       rotate();
     }
 

@@ -5,7 +5,6 @@ Config max current
 Config rgb/grb/etc
 - publish web pattern / follow web pattern
 installable PWA - page from NerdLights.net and lights addresses cached
-gradient shouldn't require setting start and end colors the same for smooth moving.  Hint, extend the "virtual length" automatically.
 captive portal for AP mode
 sliders should initialize on load
 smoothing should be an option
@@ -19,11 +18,13 @@ subscribe to holidays / effects - mexican flag for cinco de mayo / theme of the 
 audio enabled - microphone, see what's playing off of your phone?
 hook to alexa / google.
 timer / schedule
+gamma correct color mixing
 
 
 done
 
 -----------
+gradient shouldn't require setting start and end colors the same for smooth moving.  Hint, extend the "virtual length" automatically.
 separate config page (or popup from gear icon)
 - led count
 - device name
