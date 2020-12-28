@@ -27,11 +27,13 @@
             <a href="settings.html">settings</a>
         </span>
 </h1>
-        <div id="devices_div"></div>
-        
         <div>
-        <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button> 
+            <div class="inline" style="margin-right:50px;">
+                <button id="on_button" onmousedown="power_on()">on</button> <button id="off_button" onmousedown="power_off()">off</button> 
+            </div>
+            <div class="inline" id="devices_div"></div>
         </div>
+
 
 
         <h2>Effects</h2>
@@ -120,6 +122,27 @@
             </tr>
         </table>
         </div>
+        <div id="send-to-dialog" class="modal">
+            <div class=modal-content>
+                <div class="modal-header">
+                    Send program to
+                </div>
+                <div class="modal-body">
+                    <div id="send-to-devices">
+                    <button>tree</button>
+                    <button>mantle</button>
+                    </div>
+                </div>
+                <!--
+                <div class="modal-footer">
+                <h3>Modal Footer</h3>
+                </div>
+                -->
+            </div>
+          </div>
+        </div>
+
+        <button onclick="show_send_to_dialog()">Send to...</button>
     </body>
     <script>
         update_status();

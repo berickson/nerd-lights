@@ -140,12 +140,6 @@ Color mix_colors(Color c1, Color c2, float part2) {
 }
 
 
-Color mix_colors_2(Color c1, Color c2, float part2) {
-  h1 = HS
-  part2 = clamp<float>(part2, 0., 1.);
-  float part1 = 1-part2;
-  return Color(c1.r*part1+c2.r*part2+0.5, c1.g*part1+c2.g*part2+0.5, c1.b*part1+c2.b*part2+0.5);
-}
 
 
 // current lighting pattern selected for display
@@ -449,11 +443,6 @@ void cmd_get_program(CommandEnvironment & env) {
 
   //serializeJsonPretty(doc, o);
   serializeJson(doc, o);
-  // print memory usage
-  env.cerr.println();
-  env.cerr.print("used bytes:");
-  env.cerr.print(doc.memoryUsage());
-  env.cerr.println();
 }
 
 
