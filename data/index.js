@@ -117,23 +117,6 @@ function show_send_to_dialog() {
     let modal = document.getElementById("send-to-dialog");
     modal.style.display = "block"; // show color picker
 
-    // update the devices list
-    let devices_div = document.getElementById("send-to-devices");
-    devices_div.innerHTML = "";
-    for(const device of globals.devices) {
-        let button = document.createElement("button");
-        button.innerText = device.hostname;
-        button.onclick = function() {
-            command("get_program", function(e) {
-                let command = "set_program "+e.target.response;
-                remote_command(device.ip_address, command);
-                alert('sent ' + command + ' to '+device.ip_address);
-
-            });
-        }
-        devices_div.appendChild(button);
-    }
-
     // When the user clicks anywhere outside of the modal, close it
     window.addEventListener(is_touch_device ? "touchstart" : "mousedown", 
     function (event) {
@@ -316,7 +299,8 @@ function on_devices_update(e) {
     if(response.success) {
         let div = document.getElementById("devices_div");
         div.innerHTML="";
-        globals.devices = response.devices;
+        globals.devices = response.devices.slice();
+        globals.devices.sort((a,b)=> compare_strings(a.hostname.toLowerCase(),b.hostname.toLowerCase()));
 
         // all_devices is this device plus other devices
         let all_devices = globals.devices.slice();
@@ -334,6 +318,24 @@ function on_devices_update(e) {
             button.innerText = device.hostname;
             div.appendChild(button);
         }
+
+        // update the devices list
+        let devices_div = document.getElementById("send-to-devices");
+        devices_div.innerHTML = "";
+        for(const device of globals.devices) {
+            let button = document.createElement("button");
+            button.innerText = device.hostname;
+            button.onclick = function() {
+                command("get_program", function(e) {
+                    let command = "set_program "+e.target.response;
+                    remote_command(device.ip_address, command);
+                    // alert('sent ' + command + ' to '+device.ip_address);
+
+                });
+            }
+            devices_div.appendChild(button);
+        }
+
     }
  
 }
@@ -372,6 +374,7 @@ function on_status_update(e) {
     document.getElementById("twinkle_button").setAttribute("active", status.light_mode == "twinkle");
     document.getElementById("pattern1_button").setAttribute("active", status.light_mode == "pattern1");
     document.getElementById("explosion_button").setAttribute("active", status.light_mode == "explosion");
+    document.getElementById("confetti_button").setAttribute("active", status.light_mode == "confetti");
     document.getElementById("stripes_button").setAttribute("active", status.light_mode == "stripes");
     document.getElementById("strobe_button").setAttribute("active", status.light_mode == "strobe");
     document.getElementById("flicker_button").setAttribute("active", status.light_mode == "flicker");

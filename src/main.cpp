@@ -86,6 +86,7 @@ std::array<Color, max_led_count> leds;
 
 float speed = 1.0;
 float cycles = 1.0;
+#include <FastLED.h>
 
 WiFiClient wifi_client;
 PubSubClient mqtt(wifi_client);
@@ -154,7 +155,8 @@ enum LightMode {
   mode_normal,
   mode_flicker,
   mode_meteor,
-  mode_last = mode_meteor
+  mode_confetti,
+  mode_last = mode_confetti
 };
 
 LightMode string_to_light_mode(const char * s) {
@@ -225,6 +227,9 @@ const char * light_mode_name(LightMode mode) {
 
     case mode_flicker:
       return "flicker";
+
+    case mode_confetti:
+      return "confetti";
   }
   return "mode_not_found";
 }
@@ -813,6 +818,7 @@ void cmd_set_program(CommandEnvironment & env) {
   }
 }
 
+<<<<<<< HEAD
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); turn_on();}
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); turn_on();}
 void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); turn_on();}
@@ -824,6 +830,20 @@ void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on(
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
+=======
+void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
+void cmd_confetti(CommandEnvironment &env) { set_light_mode(mode_confetti); }
+void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
+void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
+void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); }
+void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
+void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
+void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
+void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); }
+void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); }
+void cmd_off(CommandEnvironment &env) { lights_on = false; }
+void cmd_on(CommandEnvironment &env) { lights_on = true; }
+>>>>>>> 3760f84 (confetti)
 
 
 
@@ -1196,6 +1216,8 @@ void setup() {
 
   commands.emplace_back(
       Command{"explosion", cmd_explosion, "colored explosions"});
+  commands.emplace_back(
+    Command{"confetti", cmd_confetti, "confetti like effect"});
   commands.emplace_back(
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(
@@ -1785,6 +1807,31 @@ void explosion() {
   }
 }
 
+void confetti() {
+  uint32_t ms = clock_millis();
+  static double next_ms = 0;
+
+  for(int i=0; i<led_count; ++i) {
+    // fade the led
+    leds[i].r *= 0.95;
+    leds[i].g *= 0.95;
+    leds[i].b *= 0.95;
+
+    // randomly set a color
+    if( rand() % 15 == 0 ) {
+      Color c1 = leds[i];
+      Color c2 = current_colors[rand()%current_colors.size()];
+      Color c3;
+      c3.r = qadd8(c1.r,c2.r);
+      c3.g = qadd8(c1.g,c2.g);
+      c3.b = qadd8(c1.b,c2.b);
+
+      leds[i] = c3;
+    }
+  }
+}
+
+
 void stripes(const std::vector<Color> & colors, bool is_tree = false) {
   auto ms = clock_millis();
   
@@ -1950,7 +1997,7 @@ void loop() {
   }
 
   if(every_n_ms(last_loop_ms, loop_ms, 1000)) {
-    Serial.printf("draw_count: %lu\n", draw_count);
+    // Serial.printf("draw_count: %lu\n", draw_count);
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
@@ -2066,6 +2113,9 @@ Below stuff would be good for a config page
           break;
         case mode_flicker:
           flicker(current_colors);
+          break;
+        case mode_confetti:
+          confetti();
           break;
       }
     } else {
