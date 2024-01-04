@@ -23,6 +23,7 @@
 
 #define ARDIUNOJSON_TAB "  "
 #include <ArduinoJson.h>
+#include "PubSubClient.h"
 
 #include "Pushbutton.h"
 
@@ -84,6 +85,11 @@ std::array<Color, max_led_count> leds;
 
 float speed = 1.0;
 float cycles = 1.0;
+
+WiFiClient wifi_client;
+PubSubClient mqtt(wifi_client);
+StaticJsonDocument<2000> doc;
+char mqtt_client_id[20];
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -147,6 +153,31 @@ enum LightMode {
   mode_meteor,
   mode_last = mode_meteor
 };
+
+LightMode string_to_light_mode(const char * s) {
+  if(strcmp(s, "explosion") == 0) {
+    return mode_explosion;
+  } else if(strcmp(s, "pattern1") == 0) {
+    return mode_pattern1;
+  } else if(strcmp(s, "gradient") == 0) {
+    return mode_gradient;
+  } else if(strcmp(s, "rainbow") == 0) {
+    return mode_rainbow;
+  } else if(strcmp(s, "strobe") == 0) {
+    return mode_strobe;
+  } else if(strcmp(s, "twinkle") == 0) {
+    return mode_twinkle;
+  } else if(strcmp(s, "stripes") == 0) {
+    return mode_stripes;
+  } else if(strcmp(s, "normal") == 0) {
+    return mode_normal;
+  } else if(strcmp(s, "flicker") == 0) {
+    return mode_flicker;
+  } else if(strcmp(s, "meteor") == 0) {
+    return mode_meteor;
+  }
+  return mode_rainbow;
+}
 
 LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
@@ -610,6 +641,12 @@ void set_program(JsonDocument & doc) {
     lights_on = old_lights_on;
   }
 
+  if(new_light_mode.is<const char *>()) {
+    auto old_lights_on = lights_on;
+    set_light_mode(string_to_light_mode(new_light_mode.as<const char *>()));
+    lights_on = old_lights_on;
+  }
+
   auto new_brightness = doc["brightness"];
   if(new_brightness.is<float>()) {
     set_brightness(new_brightness.as<float>());
@@ -618,6 +655,8 @@ void set_program(JsonDocument & doc) {
   auto new_saturation = doc["saturation"];
   if(new_brightness.is<int>()) {
     set_saturation(new_saturation.as<int>());
+  } else {
+    set_saturation(255);
   }
 
   auto new_cycles = doc["cycles"];
@@ -628,6 +667,8 @@ void set_program(JsonDocument & doc) {
   auto new_speed = doc["speed"];
   if(new_speed.is<float>()) {
     set_speed(new_speed.as<float>());
+  } else {
+    set_speed(0.0);
   }
 
   auto new_colors = doc["colors"].as<JsonArray>();
@@ -1186,6 +1227,10 @@ void setup() {
     }
   );
 
+  mqtt.setServer("nerdlights.net", 1883);
+  sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
+
+
 }  // setup
 
 // returns part of area up tree [0:1] that needs to be lit to cover height  up tree h[0:1]
@@ -1696,6 +1741,57 @@ bool is_wifi_connected_to_internet() {
     return false;
 }
 
+
+void mqtt_callback(char* topic, byte* message, unsigned int length) {
+  // Serial.print("Message arrived on topic: ");
+  // Serial.print(topic);
+  // Serial.println(". Message: ");
+  // for (int i = 0; i < length; i++) {
+  //   Serial.print((char)message[i]);
+  // }
+  // Serial.println();
+
+  // set json document to message
+  DeserializationError error = deserializeJson(doc, message, length);
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  if (doc["cmd"] == "on") {
+    lights_on = true;
+  }
+
+  if (doc["cmd"] == "off") {
+    lights_on = false;
+  }
+
+  if (doc["cmd"] == "set_program") {
+    set_program(doc);
+  }
+
+  if(doc["cmd"]) {
+    std::string command_string = doc["cmd"];
+
+    CmdParser parser;
+    parser.setOptIgnoreQuote();
+
+    parser.parseCmd((char *)command_string.c_str());
+    Command *command = get_command_by_name(parser.getCommand());
+    if (command) {
+      CommandEnvironment env(parser, Serial, Serial);
+      command->execute(env);
+    } else {
+      Serial.print("ERROR: Command not found - ");
+      Serial.println(parser.getCommand());
+    }
+  
+  }
+}
+
+bool mqtt_subscribed = false;
+
 void loop() {
   static unsigned long loop_count = 0;
   ++loop_count;
@@ -1704,6 +1800,7 @@ void loop() {
 
 
   esp32_common_loop();
+  mqtt.loop();
 
   command_button.execute(loop_ms);
   if(command_button.is_click()) {
@@ -1715,6 +1812,25 @@ void loop() {
 
   if(false && every_n_ms(last_loop_ms, loop_ms, 10000)) {
     download_program();
+  }
+
+  if (every_n_ms(last_loop_ms, loop_ms, 5000)) {
+    if(is_wifi_connected_to_internet() && !mqtt.connected()) {
+      mqtt_subscribed = false;
+      const char * username = "api_user";
+      const char * password = "api_user";
+      mqtt.connect(mqtt_client_id, username, password);
+      Serial.printf("connecting to MQTT as %s\n", mqtt_client_id);
+
+    }
+  }
+
+  if(mqtt.connected() && !mqtt_subscribed) {
+    mqtt.setCallback(mqtt_callback);
+
+    Serial.printf("MQTT Connected, listening to topic: %s\n", mqtt_client_id);
+    mqtt.subscribe(mqtt_client_id);
+    mqtt_subscribed = true;
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
