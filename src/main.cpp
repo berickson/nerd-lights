@@ -88,7 +88,7 @@ float cycles = 1.0;
 
 WiFiClient wifi_client;
 PubSubClient mqtt(wifi_client);
-StaticJsonDocument<2000> doc;
+StaticJsonDocument<3000> doc;
 char mqtt_client_id[20];
 
 //#define use_fastled
@@ -1743,13 +1743,13 @@ bool is_wifi_connected_to_internet() {
 
 
 void mqtt_callback(char* topic, byte* message, unsigned int length) {
-  // Serial.print("Message arrived on topic: ");
-  // Serial.print(topic);
-  // Serial.println(". Message: ");
-  // for (int i = 0; i < length; i++) {
-  //   Serial.print((char)message[i]);
-  // }
-  // Serial.println();
+  Serial.print("Message arrived on topic: ");
+  Serial.print(topic);
+  Serial.println(". Message: ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)message[i]);
+  }
+  Serial.println();
 
   // set json document to message
   DeserializationError error = deserializeJson(doc, message, length);
@@ -1768,26 +1768,27 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
   }
 
   if (doc["cmd"] == "set_program") {
+    Serial.println("setting program");
     set_program(doc);
   }
 
-  if(doc["cmd"]) {
-    std::string command_string = doc["cmd"];
+  // if(doc["cmd"]) {
+  //   std::string command_string = doc["cmd"];
 
-    CmdParser parser;
-    parser.setOptIgnoreQuote();
+  //   CmdParser parser;
+  //   parser.setOptIgnoreQuote();
 
-    parser.parseCmd((char *)command_string.c_str());
-    Command *command = get_command_by_name(parser.getCommand());
-    if (command) {
-      CommandEnvironment env(parser, Serial, Serial);
-      command->execute(env);
-    } else {
-      Serial.print("ERROR: Command not found - ");
-      Serial.println(parser.getCommand());
-    }
+  //   parser.parseCmd((char *)command_string.c_str());
+  //   Command *command = get_command_by_name(parser.getCommand());
+  //   if (command) {
+  //     CommandEnvironment env(parser, Serial, Serial);
+  //     command->execute(env);
+  //   } else {
+  //     Serial.print("ERROR: Command not found - ");
+  //     Serial.println(parser.getCommand());
+  //   }
   
-  }
+  // }
 }
 
 bool mqtt_subscribed = false;
