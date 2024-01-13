@@ -88,7 +88,8 @@ float cycles = 1.0;
 
 WiFiClient wifi_client;
 PubSubClient mqtt(wifi_client);
-StaticJsonDocument<3000> doc;
+StaticJsonDocument<3000> shared_json_input_doc;
+StaticJsonDocument<3000> shared_json_output_doc;
 char mqtt_client_id[20];
 
 //#define use_fastled
@@ -318,7 +319,7 @@ void find_mdns_service(const char * service_name, const char * proto)
 
 void cmd_get_nearby_devices(CommandEnvironment & env) {
   const int doc_capacity = 5000;
-  StaticJsonDocument<doc_capacity> doc;
+  auto & doc = shared_json_output_doc;
   mdns_result_t * results = nullptr;
 
   esp_err_t err = mdns_query_ptr("_nerd_lights", "_tcp", 3000, 20,  &results);
@@ -410,38 +411,46 @@ void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
   ESP.restart();
 }
 
+void get_program_json(ArduinoJson::JsonObject & program)
+{
+  program["light_mode"] = light_mode_name(light_mode);
+  program["brightness"] = brightness;
+  program["saturation"] = saturation;
+  program["cycles"] = cycles;
+  program["speed"] = speed;
+
+  JsonArray colors_array = program.createNestedArray("colors");
+  for (int i = 0; i < unscaled_colors.size(); ++i)
+  {
+    Color c = unscaled_colors[i];
+    auto color_json = colors_array.createNestedObject();
+    color_json["r"] = c.r;
+    color_json["g"] = c.g;
+    color_json["b"] = c.b;
+  }
+}
 
 
 void cmd_get_program(CommandEnvironment & env) {
+  Serial.println("cmd_get_program");
   Stream & o = env.cout;
-  const int doc_capacity = 2000;
-  StaticJsonDocument<doc_capacity> doc;
-  doc["light_mode"]=light_mode;
-  doc["brightness"]=brightness;
-  doc["saturation"]=saturation;
-  doc["cycles"]=cycles;
-  doc["speed"]=speed;
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  ArduinoJson::JsonObject program = doc.to<ArduinoJson::JsonObject>();
+  get_program_json(program);
 
-  JsonArray colors_array = doc.createNestedArray("colors");
-  for (int i = 0; i < unscaled_colors.size();++i) {
-    Color c = unscaled_colors[i];
-    auto color_json = colors_array.createNestedObject();
-    color_json["r"]=c.r;
-    color_json["g"]=c.g;
-    color_json["b"]=c.b;
-  }
   //serializeJsonPretty(doc, o);
   serializeJson(doc, o);
   // print memory usage
   env.cerr.println();
   env.cerr.print("used bytes:");
   env.cerr.print(doc.memoryUsage());
-  env.cerr.print("/");
-  env.cerr.print(doc_capacity);
   env.cerr.println();
 }
 
-void cmd_status(CommandEnvironment & env) {
+
+void cmd_status(CommandEnvironment &env)
+{
   Stream & o = env.cout;
 
   o.println("{");
@@ -527,7 +536,6 @@ void cmd_status(CommandEnvironment & env) {
   o.println("}");
 }
 
-
 void cmd_name(CommandEnvironment &env) {
   if (env.args.getParamCount() != 1) {
     env.cout.printf("Failed - requires a single parameter for name");
@@ -575,8 +583,92 @@ void calculate_scaled_colors() {
   }
 }
 
+void publish_json(const char * topic, JsonDocument & doc) {
+  String payload;
+  serializeJson(doc, payload);
+  mqtt.publish(topic, payload.c_str()); // fails silently if not connected, not a problem
+}
+
+void publish_lights_on() {
+  char topic[100];
+  snprintf(topic, 99, "devices/%s/status/lights_on", mqtt_client_id);
+
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  doc["lights_on"] = lights_on;
+  publish_json(topic, doc);
+}
+
+// sends current program to devices/{device_id}/status/program
+void publish_program() {
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  auto program = doc.createNestedObject("program");
+  get_program_json(program);
+
+  // send it
+  char topic[100];
+  snprintf(topic, 99, "devices/%s/status/program", mqtt_client_id);
+  publish_json(topic, doc);
+} 
+
+// sends device statistics to devices/{device_id}/status/statistics
+void publish_statistics() {
+  auto & doc = shared_json_output_doc;
+  auto statistics = doc.createNestedObject("statistics");
+  statistics["bytes_free"] = ESP.getFreeHeap();
+  statistics["ip_address"] = WiFi.localIP().toString();
+  statistics["firmware_version"] = __DATE__ " " __TIME__;
+  statistics["wifi_rssi"] = WiFi.RSSI();
+  statistics["uptime_seconds"] = millis()/1000;
+
+  // send it
+  char topic[100];
+  snprintf(topic, 99, "devices/%s/status/statistics", mqtt_client_id);
+  publish_json(topic, doc);
+}
+
+// sends device settings to devices/{device_id}/status/settings
+void publish_settings() {
+
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+
+  auto settings = doc.createNestedObject("settings");
+  settings["device_name"] = device_name;
+  settings["is_tree"] = is_tree;
+  settings["led_count"] = led_count;
+  settings["max_current"] = max_current;
+  settings["ssid"] = wifi_task.ssid;
+
+
+  // send it
+  char topic[100];
+  snprintf(topic, 99, "devices/%s/status/settings", mqtt_client_id);
+  publish_json(topic, doc);
+}
+
+void turn_on() {
+  if (lights_on)
+  {
+    return;
+  }
+  
+  lights_on = true;
+  publish_lights_on();
+}
+
+void turn_off() {
+  if(!lights_on) {
+    return;
+  }
+  lights_on = false;
+  publish_lights_on();
+} 
 
 void set_light_mode(LightMode mode) {
+  Serial.printf("set_light_mode %d\n", mode);
+  turn_on();
   lights_on = true;
   light_mode = mode;
   preferences.begin("main");
@@ -600,14 +692,14 @@ void set_saturation(uint8_t new_saturation) {
 }
 
 void set_cycles(float new_cycles) {
-    if (new_cycles < 0.0001 || new_cycles > 1000) {
-      Serial.println("invalid cycle value");
-      return;
-    }
-    cycles = new_cycles;
-    preferences.begin("main");
-    preferences.putFloat("cycles", cycles);
-    preferences.end();
+  if (new_cycles < 0.0001 || new_cycles > 1000) {
+    Serial.println("invalid cycle value");
+    return;
+  }
+  cycles = new_cycles;
+  preferences.begin("main");
+  preferences.putFloat("cycles", cycles);
+  preferences.end();
 }
 
 void set_speed(float new_speed) {
@@ -618,7 +710,6 @@ void set_speed(float new_speed) {
   preferences.begin("main");
   preferences.putFloat("speed", speed);
   preferences.end();
-
 }
 
 void add_color(Color color) {
@@ -636,15 +727,11 @@ void add_color(Color color) {
 void set_program(JsonDocument & doc) {
   auto new_light_mode = doc["light_mode"];
   if(new_light_mode.is<int>()) {
-    auto old_lights_on = lights_on;
     set_light_mode((LightMode)new_light_mode.as<int>());
-    lights_on = old_lights_on;
   }
 
   if(new_light_mode.is<const char *>()) {
-    auto old_lights_on = lights_on;
     set_light_mode(string_to_light_mode(new_light_mode.as<const char *>()));
-    lights_on = old_lights_on;
   }
 
   auto new_brightness = doc["brightness"];
@@ -671,8 +758,13 @@ void set_program(JsonDocument & doc) {
     set_speed(0.0);
   }
 
+
+  // print out doc["colors"]
+  // Serial.printf("doc[\"colors\"] = %s\n", doc["colors"].as<String>.c_str());
+
   auto new_colors = doc["colors"].as<JsonArray>();
   if(!new_colors.isNull() && new_colors.size() > 0) {
+    Serial.printf("setting %d colors\n", new_colors.size());
     unscaled_colors.clear();
     for(JsonObject o : new_colors) {
       Color c;
@@ -691,8 +783,8 @@ void cmd_set_program(CommandEnvironment & env) {
     return;
   }
 
-  const int doc_capacity = 2000;
-  StaticJsonDocument<doc_capacity> doc;
+  auto & doc = shared_json_input_doc;
+  doc.clear();
   String doc_string = env.args.getCmdParam(1);
   auto error = deserializeJson(doc, doc_string);
 
@@ -704,20 +796,21 @@ void cmd_set_program(CommandEnvironment & env) {
     set_program(doc);
 
     serializeJsonPretty(doc, env.cout);
+    publish_program();
   }
 }
 
-void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
-void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
-void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
-void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); }
-void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
-void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
-void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
-void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); }
-void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); }
-void cmd_off(CommandEnvironment &env) { lights_on = false; }
-void cmd_on(CommandEnvironment &env) { lights_on = true; }
+void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); turn_on();}
+void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); turn_on();}
+void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); turn_on();}
+void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); turn_on();}
+void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); turn_on();}
+void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); turn_on();}
+void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); turn_on();}
+void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on();}
+void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
+void cmd_off(CommandEnvironment &env) { turn_off(); }
+void cmd_on(CommandEnvironment &env) { turn_on(); }
 
 
 
@@ -836,6 +929,7 @@ void cmd_set_tree_mode(CommandEnvironment &env) {
   }
   env.cout.print("is_tree: ");
   env.cout.println(is_tree);
+  publish_settings();
 }
 
 
@@ -878,6 +972,7 @@ void cmd_set_led_count(CommandEnvironment &env) {
   }
   env.cout.print("ledcount = ");
   env.cout.println(led_count);
+  publish_settings();
 }
 
 void cmd_set_max_current(CommandEnvironment &env) {
@@ -898,6 +993,7 @@ void cmd_set_max_current(CommandEnvironment &env) {
   }
   env.cout.print("max_current = ");
   env.cout.println(max_current);
+  publish_settings();
 }
 
 void cmd_set_enable_wifi(CommandEnvironment &env) {
@@ -1708,30 +1804,7 @@ void flicker(const std::vector<Color> & colors) {
 
 #include "HTTPClient.h"
 
-void download_program() {
-  HTTPClient client;
 
-  // Make a HTTP request:
-  //client.begin("http://www.arduino.cc/asciilogo.txt");
-  client.begin("http://nerdlights.net/programs/program1.json");
-  auto http_code = client.GET();
-  if(http_code>0) {
-    const int doc_capacity = 2000;
-    StaticJsonDocument<doc_capacity> doc;
-    String doc_string = client.getString();
-    auto error = deserializeJson(doc, doc_string);
-
-
-    if(error) {
-      Serial.println("could not parse json");
-      Serial.println(doc_string);
-      Serial.println(error.c_str());
-    } else {
-      set_program(doc);
-      Serial.println("program set from nerdlights.net");
-    }
-  }
-}
 
 bool is_wifi_connected_to_internet() {
     struct tm timeinfo;
@@ -1752,6 +1825,8 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
   Serial.println();
 
   // set json document to message
+  auto & doc = shared_json_input_doc;
+  doc.clear();
   DeserializationError error = deserializeJson(doc, message, length);
   if (error) {
     Serial.print("deserializeJson() failed: ");
@@ -1761,15 +1836,18 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
 
   if (doc["cmd"] == "on") {
     lights_on = true;
+    publish_lights_on();
   }
 
   if (doc["cmd"] == "off") {
     lights_on = false;
+    publish_lights_on();
   }
 
   if (doc["cmd"] == "set_program") {
     Serial.println("setting program");
     set_program(doc);
+    publish_program();
   }
 
   // if(doc["cmd"]) {
@@ -1811,10 +1889,6 @@ void loop() {
     Serial.println("command long pressed");
   }
 
-  if(false && every_n_ms(last_loop_ms, loop_ms, 10000)) {
-    download_program();
-  }
-
   if (every_n_ms(last_loop_ms, loop_ms, 5000)) {
     if(is_wifi_connected_to_internet() && !mqtt.connected()) {
       mqtt_subscribed = false;
@@ -1832,6 +1906,12 @@ void loop() {
     Serial.printf("MQTT Connected, listening to topic: %s\n", mqtt_client_id);
     mqtt.subscribe(mqtt_client_id);
     mqtt_subscribed = true;
+    publish_statistics();
+  }
+
+  // every 10 minutes, publish statistics
+  if (every_n_ms(last_loop_ms, loop_ms, 10*60*1000)) {
+    publish_statistics();
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
