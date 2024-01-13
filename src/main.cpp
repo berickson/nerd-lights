@@ -615,6 +615,7 @@ void publish_program() {
 // sends device statistics to devices/{device_id}/status/statistics
 void publish_statistics() {
   auto & doc = shared_json_output_doc;
+  doc.clear();
   auto statistics = doc.createNestedObject("statistics");
   statistics["bytes_free"] = ESP.getFreeHeap();
   statistics["ip_address"] = WiFi.localIP().toString();
@@ -1907,6 +1908,8 @@ void loop() {
     mqtt.subscribe(mqtt_client_id);
     mqtt_subscribed = true;
     publish_statistics();
+    publish_settings();
+    publish_lights_on();
   }
 
   // every 10 minutes, publish statistics
