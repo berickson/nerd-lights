@@ -586,7 +586,7 @@ void calculate_scaled_colors() {
 void publish_json(const char * topic, JsonDocument & doc) {
   String payload;
   serializeJson(doc, payload);
-  mqtt.publish(topic, payload.c_str()); // fails silently if not connected, not a problem
+  mqtt.publish(topic, payload.c_str(), true); // fails silently if not connected, not a problem
 }
 
 void publish_lights_on() {
@@ -617,6 +617,12 @@ void publish_statistics() {
   auto & doc = shared_json_output_doc;
   doc.clear();
   auto statistics = doc.createNestedObject("statistics");
+
+  auto now = std::chrono::system_clock::now();
+  auto duration = now.time_since_epoch();
+  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+  statistics["timestamp"] = timestamp;
+
   statistics["bytes_free"] = ESP.getFreeHeap();
   statistics["ip_address"] = WiFi.localIP().toString();
   statistics["firmware_version"] = __DATE__ " " __TIME__;
@@ -649,6 +655,7 @@ void publish_settings() {
   publish_json(topic, doc);
 }
 
+
 void turn_on() {
   if (lights_on)
   {
@@ -666,6 +673,14 @@ void turn_off() {
   lights_on = false;
   publish_lights_on();
 } 
+
+void toggle_on_off() {
+  if (lights_on) {
+    turn_off();
+  } else {
+    turn_on();
+  }
+}
 
 void set_light_mode(LightMode mode) {
   Serial.printf("set_light_mode %d\n", mode);
@@ -1885,6 +1900,7 @@ void loop() {
   command_button.execute(loop_ms);
   if(command_button.is_click()) {
     Serial.println("command clicked");
+    toggle_on_off();
   }
   if(command_button.is_long_press()) {
     Serial.println("command long pressed");
