@@ -180,6 +180,8 @@ LightMode string_to_light_mode(const char * s) {
     return mode_flicker;
   } else if(strcmp(s, "meteor") == 0) {
     return mode_meteor;
+  } else if(strcmp(s, "confetti") == 0) {
+    return mode_confetti;
   }
   return mode_rainbow;
 }
@@ -818,8 +820,8 @@ void cmd_set_program(CommandEnvironment & env) {
   }
 }
 
-<<<<<<< HEAD
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); turn_on();}
+void cmd_confetti(CommandEnvironment &env) { set_light_mode(mode_confetti); turn_on();}
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); turn_on();}
 void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); turn_on();}
 void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); turn_on();}
@@ -830,20 +832,6 @@ void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on(
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
-=======
-void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); }
-void cmd_confetti(CommandEnvironment &env) { set_light_mode(mode_confetti); }
-void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); }
-void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); }
-void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); }
-void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); }
-void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); }
-void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); }
-void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); }
-void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); }
-void cmd_off(CommandEnvironment &env) { lights_on = false; }
-void cmd_on(CommandEnvironment &env) { lights_on = true; }
->>>>>>> 3760f84 (confetti)
 
 
 
@@ -1358,6 +1346,7 @@ void setup() {
     }
   );
 
+  mqtt.setBufferSize(3000);
   mqtt.setServer("nerdlights.net", 1883);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
