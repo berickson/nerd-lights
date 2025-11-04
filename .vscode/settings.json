@@ -15,5 +15,6 @@
         "regex": "cpp",
         "tuple": "cpp"
     },
-    "idf.port": "/dev/ttyUSB0"
+    "idf.port": "/dev/ttyUSB0",
+    "idf.pythonInstallPath": "/Users/brianerickson/anaconda3/bin/python"
 }

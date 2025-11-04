@@ -92,6 +92,18 @@ StaticJsonDocument<3000> shared_json_input_doc;
 StaticJsonDocument<3000> shared_json_output_doc;
 char mqtt_client_id[20];
 
+// Observable pattern state tracking
+String last_actual_power_id = "";
+String last_actual_program_id = "";
+bool initial_sync_complete = false;
+bool pending_power_sync = true;
+bool pending_program_sync = true;
+unsigned long sync_start_time = 0;
+const unsigned long retained_message_timeout = 5000; // 5 seconds
+
+// Forward declarations
+void set_program(JsonDocument & doc);
+
 //#define use_fastled
 #if defined(use_fastled)
 #include <FastLED.h>
@@ -172,6 +184,8 @@ LightMode string_to_light_mode(const char * s) {
     return mode_stripes;
   } else if(strcmp(s, "normal") == 0) {
     return mode_normal;
+  } else if(strcmp(s, "solid") == 0) {
+    return mode_normal;  // Map "solid" to normal mode
   } else if(strcmp(s, "flicker") == 0) {
     return mode_flicker;
   } else if(strcmp(s, "meteor") == 0) {
@@ -647,6 +661,156 @@ void publish_settings() {
   char topic[100];
   snprintf(topic, 99, "devices/%s/status/settings", mqtt_client_id);
   publish_json(topic, doc);
+}
+
+// Observable Pattern: Publish setpoint power (for controller-initiated changes)
+void publish_setpoint_power(String message_id) {
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  doc["id"] = message_id;
+  doc["timestamp"] = millis();
+  doc["lights_on"] = lights_on;
+  
+  char topic[100];
+  snprintf(topic, 99, "controllers/%s/setpoints/power", mqtt_client_id);
+  
+  String payload;
+  serializeJson(doc, payload);
+  mqtt.publish(topic, payload.c_str(), true); // retained=true
+}
+
+// Observable Pattern: Publish actual power state
+void publish_actual_power(String message_id, String status, String error = "") {
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  doc["id"] = message_id;
+  doc["status"] = status;
+  doc["timestamp"] = millis();
+  doc["lights_on"] = lights_on;
+  
+  if (error.length() > 0) {
+    doc["error"] = error;
+  }
+  
+  char topic[100];
+  snprintf(topic, 99, "controllers/%s/actuals/power", mqtt_client_id);
+  
+  String payload;
+  serializeJson(doc, payload);
+  mqtt.publish(topic, payload.c_str(), true); // retained=true
+}
+
+// Observable Pattern: Publish actual program state
+void publish_actual_program(String message_id, String status, String error = "") {
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  doc["id"] = message_id;
+  doc["status"] = status;
+  doc["timestamp"] = millis();
+  doc["lights_on"] = lights_on;
+  
+  // Include full program state
+  auto program = doc.createNestedObject("program");
+  get_program_json(program);
+  
+  if (error.length() > 0) {
+    doc["error"] = error;
+  }
+  
+  char topic[100];
+  snprintf(topic, 99, "controllers/%s/actuals/program", mqtt_client_id);
+  
+  String payload;
+  serializeJson(doc, payload);
+  mqtt.publish(topic, payload.c_str(), true); // retained=true
+}
+
+// Observable Pattern: Check if initial sync is complete
+void check_initial_sync_complete() {
+  if (!initial_sync_complete && !pending_power_sync && !pending_program_sync) {
+    initial_sync_complete = true;
+    Serial.println("Initial MQTT sync complete");
+    
+    // Publish current actual state if we have message IDs
+    if (last_actual_power_id.length() > 0) {
+      publish_actual_power(last_actual_power_id, "applied");
+    }
+    if (last_actual_program_id.length() > 0) {
+      publish_actual_program(last_actual_program_id, "applied");
+    }
+  }
+}
+
+// Observable Pattern: Handle power setpoint messages
+void handle_power_setpoint(byte* message, unsigned int length) {
+  pending_power_sync = false;
+  
+  // Parse JSON message
+  auto & doc = shared_json_input_doc;
+  doc.clear();
+  DeserializationError error = deserializeJson(doc, message, length);
+  if (error) {
+    Serial.print("handle_power_setpoint deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    check_initial_sync_complete();
+    return;
+  }
+  
+  String message_id = doc["id"];
+  
+  if (message_id != last_actual_power_id) {
+    bool requested_state = doc["lights_on"];
+    
+    // Apply the power setting
+    lights_on = requested_state;
+    Serial.printf("Applied power setpoint: lights_on=%s, id=%s\n", 
+                  lights_on ? "true" : "false", message_id.c_str());
+    
+    // Report what we applied
+    last_actual_power_id = message_id;
+    publish_actual_power(message_id, "applied");
+  }
+  
+  check_initial_sync_complete();
+}
+
+// Observable Pattern: Handle program setpoint messages
+void handle_program_setpoint(byte* message, unsigned int length) {
+  pending_program_sync = false;
+  
+  // Parse JSON message
+  auto & doc = shared_json_input_doc;
+  doc.clear();
+  DeserializationError error = deserializeJson(doc, message, length);
+  if (error) {
+    Serial.print("handle_program_setpoint deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    check_initial_sync_complete();
+    return;
+  }
+  
+  String message_id = doc["id"];
+  
+  if (message_id != last_actual_program_id) {
+    // Extract program data and apply using existing set_program function
+    if (doc.containsKey("program")) {
+      Serial.printf("Applying program setpoint, id=%s\n", message_id.c_str());
+      
+      // Create a temporary document with just the program data for set_program
+      StaticJsonDocument<2000> program_doc;
+      program_doc.set(doc["program"]);
+      set_program(program_doc);
+      
+      last_actual_program_id = message_id;
+      publish_actual_program(message_id, "applied");
+    } else {
+      Serial.println("Program setpoint missing 'program' field");
+      last_actual_program_id = message_id;
+      publish_actual_program(message_id, "error", "missing_program_field");
+    }
+  }
+  
+  check_initial_sync_complete();
 }
 
 void turn_on() {
@@ -1825,6 +1989,23 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
   }
   Serial.println();
 
+  // NEW: Check for observable pattern setpoint topics first
+  String topicStr = String(topic);
+  String devicePrefix = "controllers/" + String(mqtt_client_id) + "/setpoints/";
+  
+  if (topicStr.startsWith(devicePrefix)) {
+    String settingType = topicStr.substring(devicePrefix.length());
+    
+    if (settingType == "power") {
+      handle_power_setpoint(message, length);
+      return;
+    } else if (settingType == "program") {
+      handle_program_setpoint(message, length);
+      return;
+    }
+  }
+
+  // EXISTING: Legacy MQTT message handling for backward compatibility
   // set json document to message
   auto & doc = shared_json_input_doc;
   doc.clear();
@@ -1885,6 +2066,18 @@ void loop() {
   command_button.execute(loop_ms);
   if(command_button.is_click()) {
     Serial.println("command clicked");
+    
+    // Toggle lights on/off
+    lights_on = !lights_on;
+    Serial.printf("Physical button toggled lights to: %s\n", lights_on ? "ON" : "OFF");
+    
+    // NEW: Publish physical button change to server using observable pattern
+    if(mqtt.connected()) {
+      String unique_id = "controller_" + String(mqtt_client_id) + "_" + String(millis());
+      last_actual_power_id = unique_id;
+      publish_setpoint_power(unique_id);  // Tell server about our change
+      publish_actual_power(unique_id, "applied");  // Report that we applied it
+    }
   }
   if(command_button.is_long_press()) {
     Serial.println("command long pressed");
@@ -1905,8 +2098,27 @@ void loop() {
     mqtt.setCallback(mqtt_callback);
 
     Serial.printf("MQTT Connected, listening to topic: %s\n", mqtt_client_id);
-    mqtt.subscribe(mqtt_client_id);
+    mqtt.subscribe(mqtt_client_id); // Keep legacy subscription for backward compatibility
+    
+    // NEW: Subscribe to observable pattern setpoint topics
+    char powerSetpointTopic[100];
+    char programSetpointTopic[100];
+    snprintf(powerSetpointTopic, 99, "controllers/%s/setpoints/power", mqtt_client_id);
+    snprintf(programSetpointTopic, 99, "controllers/%s/setpoints/program", mqtt_client_id);
+    
+    mqtt.subscribe(powerSetpointTopic);
+    mqtt.subscribe(programSetpointTopic);
+    Serial.printf("Subscribed to observable pattern topics: %s, %s\n", 
+                  powerSetpointTopic, programSetpointTopic);
+    
     mqtt_subscribed = true;
+    
+    // Initialize sync state
+    sync_start_time = millis();
+    pending_power_sync = true;
+    pending_program_sync = true;
+    initial_sync_complete = false;
+    
     publish_statistics();
     publish_settings();
     publish_lights_on();
@@ -1915,6 +2127,16 @@ void loop() {
   // every 10 minutes, publish statistics
   if (every_n_ms(last_loop_ms, loop_ms, 10*60*1000)) {
     publish_statistics();
+  }
+
+  // NEW: Handle retained message timeout for observable pattern
+  if (!initial_sync_complete && (pending_power_sync || pending_program_sync)) {
+    if (millis() - sync_start_time > retained_message_timeout) {
+      Serial.println("Retained message timeout - assuming no retained messages exist");
+      pending_power_sync = false;
+      pending_program_sync = false;
+      check_initial_sync_complete();
+    }
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
