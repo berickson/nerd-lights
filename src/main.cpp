@@ -25,6 +25,7 @@
 #include <ArduinoJson.h>
 #include "PubSubClient.h"
 
+#include "light_utils.h"
 #include "Pushbutton.h"
 
 #include "ota_update.h" // for OTA update
@@ -85,6 +86,7 @@ std::array<Color, max_led_count> leds;
 
 float speed = 1.0;
 float cycles = 1.0;
+#include <FastLED.h>
 
 WiFiClient wifi_client;
 PubSubClient mqtt(wifi_client);
@@ -152,6 +154,7 @@ Color mix_colors(Color c1, Color c2, float part2) {
 
 
 
+
 // current lighting pattern selected for display
 enum LightMode {
   mode_explosion,
@@ -164,7 +167,8 @@ enum LightMode {
   mode_normal,
   mode_flicker,
   mode_meteor,
-  mode_last = mode_meteor
+  mode_confetti,
+  mode_last = mode_confetti
 };
 
 LightMode string_to_light_mode(const char * s) {
@@ -190,6 +194,8 @@ LightMode string_to_light_mode(const char * s) {
     return mode_flicker;
   } else if(strcmp(s, "meteor") == 0) {
     return mode_meteor;
+  } else if(strcmp(s, "confetti") == 0) {
+    return mode_confetti;
   }
   return mode_rainbow;
 }
@@ -237,6 +243,9 @@ const char * light_mode_name(LightMode mode) {
 
     case mode_flicker:
       return "flicker";
+
+    case mode_confetti:
+      return "confetti";
   }
   return "mode_not_found";
 }
@@ -455,11 +464,6 @@ void cmd_get_program(CommandEnvironment & env) {
 
   //serializeJsonPretty(doc, o);
   serializeJson(doc, o);
-  // print memory usage
-  env.cerr.println();
-  env.cerr.print("used bytes:");
-  env.cerr.print(doc.memoryUsage());
-  env.cerr.println();
 }
 
 
@@ -600,7 +604,7 @@ void calculate_scaled_colors() {
 void publish_json(const char * topic, JsonDocument & doc) {
   String payload;
   serializeJson(doc, payload);
-  mqtt.publish(topic, payload.c_str()); // fails silently if not connected, not a problem
+  mqtt.publish(topic, payload.c_str(), true); // fails silently if not connected, not a problem
 }
 
 void publish_lights_on() {
@@ -631,6 +635,12 @@ void publish_statistics() {
   auto & doc = shared_json_output_doc;
   doc.clear();
   auto statistics = doc.createNestedObject("statistics");
+
+  auto now = std::chrono::system_clock::now();
+  auto duration = now.time_since_epoch();
+  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+  statistics["timestamp"] = timestamp;
+
   statistics["bytes_free"] = ESP.getFreeHeap();
   statistics["ip_address"] = WiFi.localIP().toString();
   statistics["firmware_version"] = __DATE__ " " __TIME__;
@@ -831,6 +841,14 @@ void turn_off() {
   publish_lights_on();
 } 
 
+void toggle_on_off() {
+  if (lights_on) {
+    turn_off();
+  } else {
+    turn_on();
+  }
+}
+
 void set_light_mode(LightMode mode) {
   Serial.printf("set_light_mode %d\n", mode);
   turn_on();
@@ -966,6 +984,7 @@ void cmd_set_program(CommandEnvironment & env) {
 }
 
 void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); turn_on();}
+void cmd_confetti(CommandEnvironment &env) { set_light_mode(mode_confetti); turn_on();}
 void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); turn_on();}
 void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); turn_on();}
 void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); turn_on();}
@@ -1349,6 +1368,8 @@ void setup() {
   commands.emplace_back(
       Command{"explosion", cmd_explosion, "colored explosions"});
   commands.emplace_back(
+    Command{"confetti", cmd_confetti, "confetti like effect"});
+  commands.emplace_back(
       Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
   commands.emplace_back(
       Command{"gradient", cmd_gradient, "gradual blending of chosen colors"});
@@ -1488,6 +1509,7 @@ void setup() {
     }
   );
 
+  mqtt.setBufferSize(3000);
   mqtt.setServer("nerdlights.net", 1883);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
@@ -1504,28 +1526,45 @@ double percent_up_tree_for_percent_lights(double l) {
   return 1 - sqrt(1-l);
 }
 
-void gradient(bool is_tree = true) {
-  size_t n_colors =  current_colors.size();
-  int divisions = (n_colors < 2) ? 1: n_colors -1;
-  int division = 1;
-  double division_start = 0;
-  double percent = (double)division/divisions;
-  double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
 
-  //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+void gradient(bool is_tree = true) {
+
+  size_t n_colors =  current_colors.size();
+  float stretch = n_colors < 2 ? 1.0 : (float)(n_colors-1) / (n_colors);
+  double shift_left = -1.0 * speed * millis() / 1000. * led_count;
+  RepeatingPattern p(led_count, n_colors, stretch, shift_left);
   for(int i = 0; i<led_count; ++i) {
-    if(i>division_end) {
-      ++division;
-      division_start = division_end;
-      percent = (double)division/divisions;
-      division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+    auto r = p.segment_percent(i);
+    if(r.segment >= n_colors) {
+      Serial.printf("Invalid segment r.segment: %d n_colors: %d\n", r.segment, n_colors);
     }
-    uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
-    uint32_t color_b = current_colors[(division)%n_colors];
-    double part_b = (i-division_start)/(division_end-division_start);
-    uint32_t color = mix_colors(color_a, color_b, part_b);
-    leds[i]=color;
+    Color color_a = current_colors[r.segment];
+    Color color_b = current_colors[(r.segment+1)%n_colors];
+    Color color = mix_colors(color_a, color_b, r.percent);
+    leds[i] = color;
   }
+
+  // size_t n_colors =  current_colors.size();
+  // int divisions = (n_colors < 2) ? 1: n_colors -1;
+  // int division = 1;
+  // double division_start = 0;
+  // double percent = (double)division/divisions;
+  // double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+
+  // //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
+  // for(int i = 0; i<led_count; ++i) {
+  //   if(i>division_end) {
+  //     ++division;
+  //     division_start = division_end;
+  //     percent = (double)division/divisions;
+  //     division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
+  //   }
+  //   uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
+  //   uint32_t color_b = current_colors[(division)%n_colors];
+  //   double part_b = (i-division_start)/(division_end-division_start);
+  //   uint32_t color = mix_colors(color_a, color_b, part_b);
+  //   leds[i]=color;
+  // }
 }
 
 // percent is visual and goes [0,1]
@@ -1616,6 +1655,7 @@ void pattern1() {
     leds[i]=c;
   }
 }
+
 
 // inputs:
 //    h 0-360 s: 0-1 v: 0-1
@@ -1919,6 +1959,31 @@ void explosion() {
   }
 }
 
+void confetti() {
+  uint32_t ms = clock_millis();
+  static double next_ms = 0;
+
+  for(int i=0; i<led_count; ++i) {
+    // fade the led
+    leds[i].r *= 0.95;
+    leds[i].g *= 0.95;
+    leds[i].b *= 0.95;
+
+    // randomly set a color
+    if( rand() % 15 == 0 ) {
+      Color c1 = leds[i];
+      Color c2 = current_colors[rand()%current_colors.size()];
+      Color c3;
+      c3.r = qadd8(c1.r,c2.r);
+      c3.g = qadd8(c1.g,c2.g);
+      c3.b = qadd8(c1.b,c2.b);
+
+      leds[i] = c3;
+    }
+  }
+}
+
+
 void stripes(const std::vector<Color> & colors, bool is_tree = false) {
   auto ms = clock_millis();
   
@@ -2055,6 +2120,7 @@ bool mqtt_subscribed = false;
 
 void loop() {
   static unsigned long loop_count = 0;
+  static unsigned long draw_count = 0;
   ++loop_count;
   static unsigned long last_loop_ms = 0;
   unsigned long loop_ms = clock_millis();
@@ -2067,11 +2133,10 @@ void loop() {
   if(command_button.is_click()) {
     Serial.println("command clicked");
     
-    // Toggle lights on/off
-    lights_on = !lights_on;
-    Serial.printf("Physical button toggled lights to: %s\n", lights_on ? "ON" : "OFF");
+    // Use the new toggle function from upstream
+    toggle_on_off();
     
-    // NEW: Publish physical button change to server using observable pattern
+    // ADD: Publish physical button change to server using observable pattern
     if(mqtt.connected()) {
       String unique_id = "controller_" + String(mqtt_client_id) + "_" + String(millis());
       last_actual_power_id = unique_id;
@@ -2137,6 +2202,10 @@ void loop() {
       pending_program_sync = false;
       check_initial_sync_complete();
     }
+  }
+
+  if(every_n_ms(last_loop_ms, loop_ms, 1000)) {
+    // Serial.printf("draw_count: %lu\n", draw_count);
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
@@ -2218,6 +2287,7 @@ Below stuff would be good for a config page
 
 
   if(every_n_ms(last_loop_ms, loop_ms, 30)) {
+    ++draw_count;
 
     if(lights_on) {
       switch (light_mode) {
@@ -2252,13 +2322,16 @@ Below stuff would be good for a config page
         case mode_flicker:
           flicker(current_colors);
           break;
+        case mode_confetti:
+          confetti();
+          break;
       }
     } else {
       off();
     }
 
     // rotate
-    if(light_mode != mode_rainbow && light_mode != mode_stripes ) {
+    if(light_mode != mode_rainbow && light_mode != mode_stripes && light_mode != mode_gradient) {
       rotate();
     }
 

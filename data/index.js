@@ -1,4 +1,7 @@
 let is_touch_device = 'ontouchstart' in document.documentElement;
+let globals = {};
+globals.device_name = "?";
+globals.devices = [];
 
 customElements.define('color-button',
     class extends HTMLElement {
@@ -110,6 +113,23 @@ customElements.define('color-button',
     }
 );
 
+function show_send_to_dialog() {
+    let modal = document.getElementById("send-to-dialog");
+    modal.style.display = "block"; // show color picker
+
+    // When the user clicks anywhere outside of the modal, close it
+    window.addEventListener(is_touch_device ? "touchstart" : "mousedown", 
+    function (event) {
+        if (event.target == modal) {
+            modal.style.display = "none";
+            color_picker.off('color:change');
+        }
+    }
+)
+
+
+}
+
 function log_scale(p, minp=0, maxp=100, min=0.1, max=10) {
     // The result should be between min and max
     let minv = Math.log(min);
@@ -130,6 +150,17 @@ function inverse_log_scale(v, minp=0, maxp=100, min=0.1, max=10) {
     let scale = (maxv-minv) / (maxp-minp);
     let p = (Math.log(v)-minv)/scale + minp;
     return p
+}
+
+
+function remote_command(host, s, onload = null) {
+    let r = new XMLHttpRequest();
+    r.open("POST", "http://"+host+"/command");
+    r.setRequestHeader("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+    if(onload!=null) {
+        r.onload = onload;
+    }
+    r.send(s);
 }
 
 function command(s, onload = null) {
@@ -268,15 +299,43 @@ function on_devices_update(e) {
     if(response.success) {
         let div = document.getElementById("devices_div");
         div.innerHTML="";
-        
-        response.devices.sort((a,b)=> compare_strings(a.hostname.toLowerCase(),b.hostname.toLowerCase()));
+        globals.devices = response.devices.slice();
+        globals.devices.sort((a,b)=> compare_strings(a.hostname.toLowerCase(),b.hostname.toLowerCase()));
 
-        for(const device of response.devices) {
+        // all_devices is this device plus other devices
+        let all_devices = globals.devices.slice();
+        all_devices.push({"hostname":globals.device_name});
+        all_devices.sort((a,b)=> compare_strings(a.hostname.toLowerCase(),b.hostname.toLowerCase()));
+
+        for(const device of all_devices) {
             let button = document.createElement("button");
-            button.setAttribute("onmousedown", "window.location.href='"+"http://"+device.ip_address+"'");
+            if("ip_address" in device) {
+                button.setAttribute("onmousedown", "window.location.href='"+"http://"+device.ip_address+"'");
+            } else {
+                // this device should show as active (halo)
+                button.setAttribute("active",true); 
+            }
             button.innerText = device.hostname;
             div.appendChild(button);
         }
+
+        // update the devices list
+        let devices_div = document.getElementById("send-to-devices");
+        devices_div.innerHTML = "";
+        for(const device of globals.devices) {
+            let button = document.createElement("button");
+            button.innerText = device.hostname;
+            button.onclick = function() {
+                command("get_program", function(e) {
+                    let command = "set_program "+e.target.response;
+                    remote_command(device.ip_address, command);
+                    // alert('sent ' + command + ' to '+device.ip_address);
+
+                });
+            }
+            devices_div.appendChild(button);
+        }
+
     }
  
 }
@@ -302,6 +361,7 @@ function on_status_update(e) {
     update_brightness(status.brightness);
     update_cycles(status.cycles);
     update_saturation(status.saturation);
+    globals.device_name = status.device_name;
 
     document.getElementById("page_title").innerText = "Nerd Lights: " + status.device_name;
     document.getElementById("head_title").innerText = status.device_name;
@@ -314,6 +374,7 @@ function on_status_update(e) {
     document.getElementById("twinkle_button").setAttribute("active", status.light_mode == "twinkle");
     document.getElementById("pattern1_button").setAttribute("active", status.light_mode == "pattern1");
     document.getElementById("explosion_button").setAttribute("active", status.light_mode == "explosion");
+    document.getElementById("confetti_button").setAttribute("active", status.light_mode == "confetti");
     document.getElementById("stripes_button").setAttribute("active", status.light_mode == "stripes");
     document.getElementById("strobe_button").setAttribute("active", status.light_mode == "strobe");
     document.getElementById("flicker_button").setAttribute("active", status.light_mode == "flicker");
