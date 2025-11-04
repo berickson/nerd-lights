@@ -607,17 +607,7 @@ void publish_json(const char * topic, JsonDocument & doc) {
   mqtt.publish(topic, payload.c_str(), true); // fails silently if not connected, not a problem
 }
 
-void publish_lights_on() {
-  char topic[100];
-  snprintf(topic, 99, "devices/%s/status/lights_on", mqtt_client_id);
-
-  auto & doc = shared_json_output_doc;
-  doc.clear();
-  doc["lights_on"] = lights_on;
-  publish_json(topic, doc);
-}
-
-// sends current program to devices/{device_id}/status/program
+// sends current program to controllers/{device_id}/status/program
 void publish_program() {
   auto & doc = shared_json_output_doc;
   doc.clear();
@@ -626,11 +616,11 @@ void publish_program() {
 
   // send it
   char topic[100];
-  snprintf(topic, 99, "devices/%s/status/program", mqtt_client_id);
+  snprintf(topic, 99, "controllers/%s/status/program", mqtt_client_id);
   publish_json(topic, doc);
 } 
 
-// sends device statistics to devices/{device_id}/status/statistics
+// sends device statistics to controllers/{device_id}/status/statistics
 void publish_statistics() {
   auto & doc = shared_json_output_doc;
   doc.clear();
@@ -649,11 +639,11 @@ void publish_statistics() {
 
   // send it
   char topic[100];
-  snprintf(topic, 99, "devices/%s/status/statistics", mqtt_client_id);
+  snprintf(topic, 99, "controllers/%s/status/statistics", mqtt_client_id);
   publish_json(topic, doc);
 }
 
-// sends device settings to devices/{device_id}/status/settings
+// sends device settings to controllers/{device_id}/status/settings
 void publish_settings() {
 
   auto & doc = shared_json_output_doc;
@@ -669,7 +659,7 @@ void publish_settings() {
 
   // send it
   char topic[100];
-  snprintf(topic, 99, "devices/%s/status/settings", mqtt_client_id);
+  snprintf(topic, 99, "controllers/%s/status/settings", mqtt_client_id);
   publish_json(topic, doc);
 }
 
@@ -830,7 +820,7 @@ void turn_on() {
   }
   
   lights_on = true;
-  publish_lights_on();
+  // NOTE: Power state now handled through observable pattern (actuals/setpoints)
 }
 
 void turn_off() {
@@ -838,7 +828,7 @@ void turn_off() {
     return;
   }
   lights_on = false;
-  publish_lights_on();
+  // NOTE: Power state now handled through observable pattern (actuals/setpoints)
 } 
 
 void toggle_on_off() {
@@ -2083,12 +2073,12 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
 
   if (doc["cmd"] == "on") {
     lights_on = true;
-    publish_lights_on();
+    // NOTE: Legacy command - power state now handled through observable pattern
   }
 
   if (doc["cmd"] == "off") {
     lights_on = false;
-    publish_lights_on();
+    // NOTE: Legacy command - power state now handled through observable pattern
   }
 
   if (doc["cmd"] == "set_program") {
@@ -2186,7 +2176,7 @@ void loop() {
     
     publish_statistics();
     publish_settings();
-    publish_lights_on();
+    // NOTE: lights_on status now handled through observable pattern (actuals topic)
   }
 
   // every 10 minutes, publish statistics
