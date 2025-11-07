@@ -5,9 +5,9 @@
         <link rel="icon" type="image/png" href="favicon.png">
         <link rel="apple-touch-icon" sizes="128x128" href="niceicon.png">
         <link rel="icon" sizes="192x192" href="vector-icon.svg">
+        <script src="index.js"></script>
     </head>
-<body>
-<script src="index.js"></script> 
+<body> 
 <script>
     function on_status_result(e) {
         let status = JSON.parse(e.target.response);
@@ -111,11 +111,24 @@
 
 </div>
     <div>
-        <button onclick = "command('restart')">Restart</button>
-        <button onclick="command('do_firmware_upgrade')">System Update</button>
+        <button id="restart_button">Restart</button>
+        <button id="system_update_button">System Update</button>
     </div>
 <h1> Advanced</h1>
     <a href='command_line.html'>Command Line</a>
+
+<script>
+    // Add event listeners after DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('restart_button').addEventListener('click', function() {
+            command('restart');
+        });
+        
+        document.getElementById('system_update_button').addEventListener('click', function() {
+            command('do_firmware_upgrade');
+        });
+    });
+</script>
 
     
 </div>
