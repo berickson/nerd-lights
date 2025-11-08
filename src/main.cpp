@@ -841,8 +841,6 @@ void toggle_on_off() {
 
 void set_light_mode(LightMode mode) {
   Serial.printf("set_light_mode %d\n", mode);
-  turn_on();
-  lights_on = true;
   light_mode = mode;
   preferences.begin("main");
   preferences.putInt("light_mode", (int)light_mode);
