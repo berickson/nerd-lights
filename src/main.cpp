@@ -813,6 +813,43 @@ void handle_program_setpoint(byte* message, unsigned int length) {
   check_initial_sync_complete();
 }
 
+// Command Console: Handle console command messages
+void handle_console_command(byte* message, unsigned int length) {
+  // Convert message to string
+  char command_string[length + 1];
+  memcpy(command_string, message, length);
+  command_string[length] = '\0';
+  
+  Serial.printf("Received console command: %s\n", command_string);
+  
+  // Parse command using existing infrastructure
+  CmdParser parser;
+  parser.setOptIgnoreQuote();
+  parser.parseCmd(command_string);
+  
+  // Find command
+  Command *command = get_command_by_name(parser.getCommand());
+  
+  String output_string;
+  output_string.reserve(2000);
+  StringStream output_stream(output_string);
+  
+  if (command == nullptr) {
+    output_stream.printf("ERROR: Command not found - %s\n", parser.getCommand());
+  } else {
+    // Execute command
+    CommandEnvironment env(parser, output_stream, output_stream);
+    command->execute(env);
+  }
+  
+  // Publish result
+  char resultTopic[100];
+  snprintf(resultTopic, 99, "controllers/%s/commands/result", mqtt_client_id);
+  mqtt.publish(resultTopic, output_string.c_str());
+  
+  Serial.printf("Command result published (%d bytes)\n", output_string.length());
+}
+
 void turn_on() {
   if (lights_on)
   {
@@ -2057,6 +2094,17 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
       return;
     }
   }
+  
+  // NEW: Check for command console topics
+  String commandPrefix = "controllers/" + String(mqtt_client_id) + "/commands/";
+  if (topicStr.startsWith(commandPrefix)) {
+    String commandType = topicStr.substring(commandPrefix.length());
+    
+    if (commandType == "console") {
+      handle_console_command(message, length);
+      return;
+    }
+  }
 
   // EXISTING: Legacy MQTT message handling for backward compatibility
   // set json document to message
@@ -2163,6 +2211,12 @@ void loop() {
     mqtt.subscribe(programSetpointTopic);
     Serial.printf("Subscribed to observable pattern topics: %s, %s\n", 
                   powerSetpointTopic, programSetpointTopic);
+    
+    // NEW: Subscribe to command console topic
+    char consoleCommandTopic[100];
+    snprintf(consoleCommandTopic, 99, "controllers/%s/commands/console", mqtt_client_id);
+    mqtt.subscribe(consoleCommandTopic);
+    Serial.printf("Subscribed to console commands topic: %s\n", consoleCommandTopic);
     
     mqtt_subscribed = true;
     
