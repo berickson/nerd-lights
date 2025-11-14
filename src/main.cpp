@@ -99,6 +99,10 @@ String last_actual_power_id = "";
 String last_actual_program_id = "";
 bool initial_sync_complete = false;
 bool pending_power_sync = true;
+
+// Scheduled restart state
+static bool restart_pending = false;
+static unsigned long restart_scheduled_ms = 0;
 bool pending_program_sync = true;
 unsigned long sync_start_time = 0;
 const unsigned long retained_message_timeout = 5000; // 5 seconds
@@ -391,20 +395,26 @@ void cmd_get_nearby_devices(CommandEnvironment & env) {
   serializeJson(doc, env.cout);
 }
 
+void schedule_restart(unsigned long delay_ms = 100) {
+  restart_pending = true;
+  restart_scheduled_ms = millis() + delay_ms;
+  Serial.printf("Restart scheduled in %lu ms\n", delay_ms);
+}
+
 void cmd_restart (CommandEnvironment & env) {
+  env.cout.printf("Restarting");
   blacken_pixels();
 
   display.clear();
   display.drawString(0,0,"Restarting");
   display.display();
 
-  Serial.println("Restarting");
-  delay(500);
-  ESP.restart();
+  schedule_restart(500);
 }
 
 void cmd_do_ota_upgrade(CommandEnvironment & env) {
-
+  env.cout.printf("Starting firmware upgrade");
+  
   preferences.begin("main");
   preferences.putBool(pref_do_ota_on_boot,true);
   preferences.end();
@@ -416,22 +426,19 @@ void cmd_do_ota_upgrade(CommandEnvironment & env) {
   display.drawString(0,10,"firmware upgrade");
   display.display();
 
-  Serial.println("Restarting to perform firmware upgrade");
-  delay(500);
-  ESP.restart();
+  schedule_restart(500);
 }
 
 void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
+  env.cout.printf("Starting SPIFFS upgrade");
+  
   preferences.begin("main");
   preferences.putBool(pref_do_ota_spiffs_on_boot,true);
   preferences.end();
 
   blacken_pixels();
 
-
-  Serial.println("Restarting to perform SPIFFS upgrade");
-  delay(500);
-  ESP.restart();
+  schedule_restart(500);
 }
 
 void get_program_json(ArduinoJson::JsonObject & program)
@@ -569,7 +576,9 @@ void cmd_name(CommandEnvironment &env) {
   preferences.begin("main");
   preferences.putString("bt_name", name);
   preferences.end();
-  esp_restart();
+  
+  env.cout.printf("name = %s", name.c_str());
+  schedule_restart();
 }
 
 inline uint8_t mul_div(uint8_t number, uint32_t numerator, uint32_t denominator) {
@@ -2152,6 +2161,17 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
 bool mqtt_subscribed = false;
 
 void loop() {
+  // Check for pending restart
+  if (restart_pending && millis() >= restart_scheduled_ms) {
+    Serial.println("Executing scheduled restart");
+    blacken_pixels();
+    display.clear();
+    display.drawString(0,0,"Restarting");
+    display.display();
+    delay(100);
+    ESP.restart();
+  }
+  
   static unsigned long loop_count = 0;
   static unsigned long draw_count = 0;
   ++loop_count;
