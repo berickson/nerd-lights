@@ -2062,11 +2062,8 @@ void flicker(const std::vector<Color> & colors) {
 
 
 bool is_wifi_connected_to_internet() {
-    struct tm timeinfo;
-    if(getLocalTime(&timeinfo)){
-      return true;
-    }
-    return false;
+  return WiFi.isConnected();
+
 }
 
 
