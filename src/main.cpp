@@ -211,6 +211,10 @@ LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
 uint8_t brightness = 50;
 
+// breathe pattern variables
+uint32_t breathe_cycle_start_ms = 0;
+uint32_t breathe_duration_ms = 6000;
+
 std::vector<Color> unscaled_colors = {Color(15, 15, 15)};
 std::vector<Color> current_colors = {Color(15, 15, 15)};
 
@@ -1033,6 +1037,11 @@ void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); turn_on(
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); turn_on();}
 void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on();}
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
+void cmd_breathe(CommandEnvironment &env) { 
+  breathe_cycle_start_ms = 0;  // Reset cycle on mode change
+  set_light_mode(mode_breathe); 
+  turn_on();
+}
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
 
@@ -1112,6 +1121,25 @@ void cmd_speed(CommandEnvironment &env) {
   }
   env.cout.print("speed = ");
   env.cout.println(speed);
+}
+
+void cmd_duration(CommandEnvironment &env) {
+  if (env.args.getParamCount() > 1) {
+    env.cerr.printf("failed - requires one parameter");
+    return;
+  }
+  if (env.args.getParamCount() == 1) {
+    auto new_duration_ms = atoi(env.args.getCmdParam(1));
+    if (new_duration_ms < 100 || new_duration_ms > 60000) {
+      env.cerr.printf("failed - duration must be between 100 and 60000 milliseconds");
+      return;
+    }
+    breathe_duration_ms = new_duration_ms;
+    breathe_cycle_start_ms = 0;  // Reset cycle when duration changes
+  }
+  env.cout.print("duration = ");
+  env.cout.print(breathe_duration_ms);
+  env.cout.println(" ms");
 }
 
 void cmd_saturation(CommandEnvironment &env) {
@@ -1434,6 +1462,8 @@ void setup() {
   commands.emplace_back(Command{"is_tree", cmd_set_tree_mode, "set to true if lights are on a tree, makes stripes same width bottom to top"});
   commands.emplace_back(Command{"normal", cmd_normal, "colors are repeated through the strand"});
   commands.emplace_back(Command{"flicker", cmd_flicker, "flicker like a candle"});
+  commands.emplace_back(Command{"breathe", cmd_breathe, "smooth breathing effect with sine wave"});
+  commands.emplace_back(Command{"duration", cmd_duration, "set duration in milliseconds for breathe pattern (100-60000)"});
   commands.emplace_back(
       Command("color", cmd_color, "set the first color of the pattern / pallet"));
   commands.emplace_back(
@@ -2023,6 +2053,34 @@ void confetti() {
   }
 }
 
+void breathe() {
+  uint32_t ms = clock_millis();
+  
+  // Initialize cycle start on first call or mode change
+  if (breathe_cycle_start_ms == 0) {
+    breathe_cycle_start_ms = ms;
+  }
+  
+  // Calculate position in cycle (0.0 to 1.0)
+  uint32_t elapsed = ms - breathe_cycle_start_ms;
+  if (elapsed >= breathe_duration_ms) {
+    breathe_cycle_start_ms = ms;
+    elapsed = 0;
+  }
+  double cycle_position = (double)elapsed / breathe_duration_ms;
+  
+  // Sine wave brightness (0.0 to 1.0)
+  double brightness_factor = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
+  
+  // Apply to all LEDs
+  for (int i = 0; i < led_count; ++i) {
+    Color base = current_colors[i % current_colors.size()];
+    leds[i].r = base.r * brightness_factor;
+    leds[i].g = base.g * brightness_factor;
+    leds[i].b = base.b * brightness_factor;
+  }
+}
+
 
 void stripes(const std::vector<Color> & colors, bool is_tree = false) {
   auto ms = clock_millis();
@@ -2389,6 +2447,9 @@ Below stuff would be good for a config page
           break;
         case mode_confetti:
           confetti();
+          break;
+        case mode_breathe:
+          breathe();
           break;
       }
     } else {
