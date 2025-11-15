@@ -172,7 +172,8 @@ enum LightMode {
   mode_flicker,
   mode_meteor,
   mode_confetti,
-  mode_last = mode_confetti
+  mode_breathe,
+  mode_last = mode_breathe
 };
 
 LightMode string_to_light_mode(const char * s) {
@@ -200,6 +201,8 @@ LightMode string_to_light_mode(const char * s) {
     return mode_meteor;
   } else if(strcmp(s, "confetti") == 0) {
     return mode_confetti;
+  } else if(strcmp(s, "breathe") == 0) {
+    return mode_breathe;
   }
   return mode_rainbow;
 }
@@ -250,6 +253,9 @@ const char * light_mode_name(LightMode mode) {
 
     case mode_confetti:
       return "confetti";
+
+    case mode_breathe:
+      return "breathe";
   }
   return "mode_not_found";
 }
