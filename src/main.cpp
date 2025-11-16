@@ -116,6 +116,11 @@ void cmd_pattern_set(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 
+// Pattern system forward declarations
+class PatternBase;
+class PatternRegistry;
+extern PatternRegistry pattern_registry;
+
 //#define use_fastled
 #if defined(use_fastled)
 #include <FastLED.h>
