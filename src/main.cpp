@@ -2081,7 +2081,7 @@ void breathe() {
     uint32_t elapsed = ms - breathe_cycle_start_ms;
     // we use half the duration so color to black will
     // take the same time as color to color below
-    double d = breathe_duration_ms * 2;
+    auto d = breathe_duration_ms * 2;
     double cycle_position = (double)(elapsed % d) / d;
     
     // Full sine wave for smooth breathing (0.0 to 1.0 and back to 0.0)
