@@ -110,6 +110,10 @@ const unsigned long retained_message_timeout = 5000; // 5 seconds
 // Pattern system control flag
 bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
 
+// Global pattern system state (shared across all patterns)
+Color global_colors[10] = {{0xFF, 0xA5, 0x00}}; // Default: warm orange
+int global_color_count = 1;
+
 // Forward declarations for functions defined after pattern classes
 void set_program(JsonDocument & doc);
 void cmd_pattern_list(CommandEnvironment &env);
@@ -330,7 +334,6 @@ public:
     virtual void render(Color* leds, int led_count, uint32_t time_ms) = 0;
     
     virtual void set_parameter_int(const char* name, int value) {}
-    virtual void set_parameter_colors(const char* name, const Color* colors, int count) {}
     
     virtual void reset() {}
 };
@@ -338,15 +341,12 @@ public:
 class SolidPattern : public PatternBase {
 private:
     int brightness_;
-    Color colors_[10];
-    int color_count_;
     int spacing_;
 
 public:
     SolidPattern() 
-        : brightness_(100), color_count_(1), spacing_(1)
+        : brightness_(100), spacing_(1)
     {
-        colors_[0] = {0xFF, 0xA5, 0x00};
     }
     
     const char* get_name() const override { return "Solid"; }
@@ -388,8 +388,8 @@ public:
         };
         
         for (int i = 0; i < led_count; i++) {
-            int color_index = (i / spacing_) % color_count_;
-            leds[i] = apply_brightness(colors_[color_index]);
+            int color_index = (i / spacing_) % global_color_count;
+            leds[i] = apply_brightness(global_colors[color_index]);
         }
     }
     
@@ -401,30 +401,19 @@ public:
         }
     }
     
-    void set_parameter_colors(const char* name, const Color* colors, int count) override {
-        if (strcmp(name, "colors") == 0 && count > 0) {
-            color_count_ = min(count, 10);
-            memcpy(colors_, colors, color_count_ * sizeof(Color));
-        }
-    }
-    
     void reset() override {}
 };
 
 class BreathePattern : public PatternBase {
 private:
     int brightness_;
-    Color colors_[10];
-    int color_count_;
     int duration_;
     uint32_t cycle_start_ms_;
 
 public:
     BreathePattern()
-        : brightness_(100), color_count_(2), duration_(6000), cycle_start_ms_(0)
+        : brightness_(100), duration_(6000), cycle_start_ms_(0)
     {
-        colors_[0] = {0x00, 0x00, 0x00};
-        colors_[1] = {0x00, 0x00, 0xFF};
     }
     
     const char* get_name() const override { return "Breathe"; }
@@ -451,14 +440,14 @@ public:
         }
 
         Color blended = Color(0, 0, 0);
-        const int num_colors = color_count_;
+        const int num_colors = global_color_count;
         
         if (num_colors == 1) {
             uint32_t elapsed = time_ms - cycle_start_ms_;
             auto d = duration_ * 2;
             double cycle_position = (double)(elapsed % d) / d;
             double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
-            blended = mix_colors(Color(0, 0, 0), colors_[0], amplitude);
+            blended = mix_colors(Color(0, 0, 0), global_colors[0], amplitude);
         }
         else if (num_colors > 1) {
             uint32_t total_elapsed = time_ms - cycle_start_ms_;
@@ -471,8 +460,8 @@ public:
             double cycle_position = (double)elapsed_in_cycle / duration_;
             double amplitude = (sin(cycle_position * PI - PI/2) + 1.0) / 2.0;
             
-            Color color1 = colors_[color_index % num_colors];
-            Color color2 = colors_[(color_index + 1) % num_colors];
+            Color color1 = global_colors[color_index % num_colors];
+            Color color2 = global_colors[(color_index + 1) % num_colors];
             
             blended = mix_colors(color1, color2, amplitude);
         }
@@ -487,13 +476,6 @@ public:
             brightness_ = clamp(value, 0, 100);
         } else if (strcmp(name, "duration") == 0) {
             duration_ = clamp(value, 1000, 10000);
-        }
-    }
-    
-    void set_parameter_colors(const char* name, const Color* colors, int count) override {
-        if (strcmp(name, "colors") == 0 && count > 0) {
-            color_count_ = min(count, 10);
-            memcpy(colors_, colors, color_count_ * sizeof(Color));
         }
     }
     
@@ -1422,6 +1404,14 @@ void cmd_color(CommandEnvironment &env) {
     Color color = Color(atoi(env.args.getCmdParam(i*3+1)), atoi(env.args.getCmdParam(i*3+2)),
                     atoi(env.args.getCmdParam(i*3+3)));
     add_color(color);
+  }
+  
+  // Bridge to pattern system - sync colors to global palette
+  if (use_patterns) {
+    global_color_count = min((int)unscaled_colors.size(), 10);
+    for (int i = 0; i < global_color_count; i++) {
+      global_colors[i] = unscaled_colors[i];
+    }
   }
 }
 
@@ -3060,41 +3050,39 @@ void cmd_pattern_param(CommandEnvironment &env) {
         }
         
         // Parse color values - supports multiple colors separated by spaces
-        Color colors[10];
-        int color_count = 0;
+        // Write directly to global_colors (shared by all patterns)
+        global_color_count = 0;
         
         // Split by space and parse each color
         char* token = strtok(value_buffer, " \t");
-        while (token != NULL && color_count < 10) {
+        while (token != NULL && global_color_count < 10) {
             
             if (token[0] == '#' && strlen(token) >= 7) {
                 // Hex format: #RRGGBB
                 unsigned int r, g, b;
                 if (sscanf(token + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
-                    colors[color_count].r = r;
-                    colors[color_count].g = g;
-                    colors[color_count].b = b;
-                    color_count++;
+                    global_colors[global_color_count].r = r;
+                    global_colors[global_color_count].g = g;
+                    global_colors[global_color_count].b = b;
+                    global_color_count++;
                 }
             }
             
             token = strtok(NULL, " \t");
         }
         
-        if (color_count == 0) {
+        if (global_color_count == 0) {
             env.cerr.println("Invalid color format. Use hex: #RRGGBB");
             env.cerr.println("  Single: #FF0000");
             env.cerr.println("  Multiple: #FF0000 #00FF00 #0000FF");
             return;
         }
         
-        active->set_parameter_colors(param_name, colors, color_count);
-        
         // Print confirmation
         env.cout.print("Set colors = ");
-        for (int i = 0; i < color_count; i++) {
+        for (int i = 0; i < global_color_count; i++) {
             if (i > 0) env.cout.print(", ");
-            env.cout.printf("#%02X%02X%02X", colors[i].r, colors[i].g, colors[i].b);
+            env.cout.printf("#%02X%02X%02X", global_colors[i].r, global_colors[i].g, global_colors[i].b);
         }
         env.cout.println();
         
