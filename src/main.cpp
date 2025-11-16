@@ -3050,31 +3050,61 @@ void cmd_pattern_param(CommandEnvironment &env) {
     
     // Handle different parameter types
     if (strcmp(param_name, "colors") == 0) {
-        // Parse color value (hex format: #RRGGBB or R,G,B)
-        Color color;
-        if (param_value[0] == '#' && strlen(param_value) == 7) {
-            // Hex format: #RRGGBB
-            unsigned int r, g, b;
-            sscanf(param_value + 1, "%02x%02x%02x", &r, &g, &b);
-            color.r = r;
-            color.g = g;
-            color.b = b;
-        } else {
-            // Try R,G,B format
-            int r, g, b;
-            if (sscanf(param_value, "%d,%d,%d", &r, &g, &b) == 3) {
-                color.r = constrain(r, 0, 255);
-                color.g = constrain(g, 0, 255);
-                color.b = constrain(b, 0, 255);
+        // Parse color values - supports multiple colors separated by commas
+        // Formats: #RRGGBB,#RRGGBB,... or single color
+        Color colors[10];
+        int color_count = 0;
+        
+        // Create a working copy since strtok modifies the string
+        char value_copy[256];
+        strncpy(value_copy, param_value, sizeof(value_copy) - 1);
+        value_copy[sizeof(value_copy) - 1] = '\0';
+        
+        // Split by comma or space and parse each color
+        char* token = strtok(value_copy, ", \t");
+        while (token != NULL && color_count < 10) {
+            // Token is already trimmed by strtok
+            
+            if (token[0] == '#' && strlen(token) >= 7) {
+                // Hex format: #RRGGBB
+                unsigned int r, g, b;
+                if (sscanf(token + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+                    colors[color_count].r = r;
+                    colors[color_count].g = g;
+                    colors[color_count].b = b;
+                    color_count++;
+                }
             } else {
-                env.cerr.println("Invalid color format. Use #RRGGBB or R,G,B");
-                return;
+                // Try decimal R G B format (space or comma separated within this token)
+                int r, g, b;
+                if (sscanf(token, "%d %d %d", &r, &g, &b) == 3 ||
+                    sscanf(token, "%d,%d,%d", &r, &g, &b) == 3) {
+                    colors[color_count].r = constrain(r, 0, 255);
+                    colors[color_count].g = constrain(g, 0, 255);
+                    colors[color_count].b = constrain(b, 0, 255);
+                    color_count++;
+                }
             }
+            
+            token = strtok(NULL, ", \t");
         }
         
-        Color colors[] = {color};
-        active->set_parameter_colors(param_name, colors, 1);
-        env.cout.printf("Set %s = #%02X%02X%02X\n", param_name, color.r, color.g, color.b);
+        if (color_count == 0) {
+            env.cerr.println("Invalid color format. Use:");
+            env.cerr.println("  Single: #RRGGBB or R,G,B");
+            env.cerr.println("  Multiple: #FF0000 #00FF00 #0000FF");
+            return;
+        }
+        
+        active->set_parameter_colors(param_name, colors, color_count);
+        
+        // Print confirmation
+        env.cout.print("Set colors = ");
+        for (int i = 0; i < color_count; i++) {
+            if (i > 0) env.cout.print(", ");
+            env.cout.printf("#%02X%02X%02X", colors[i].r, colors[i].g, colors[i].b);
+        }
+        env.cout.println();
         
     } else {
         // Assume integer parameter
