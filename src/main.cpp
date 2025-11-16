@@ -121,6 +121,7 @@ void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
 void cmd_pattern_param(CommandEnvironment &env);
+void cmd_pattern_reset(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 void render_with_pattern_system();
@@ -333,7 +334,8 @@ public:
     
     virtual void render(Color* leds, int led_count, uint32_t time_ms) = 0;
     
-    virtual void set_parameter_int(const char* name, int value) {}
+    // Returns nullptr on success, error message on failure
+    virtual const char* set_parameter_int(const char* name, int value) { return nullptr; }
     
     virtual void reset() {}
 };
@@ -393,15 +395,25 @@ public:
         }
     }
     
-    void set_parameter_int(const char* name, int value) override {
+    const char* set_parameter_int(const char* name, int value) override {
         if (strcmp(name, "brightness") == 0) {
-            brightness_ = clamp(value, 0, 100);
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
         } else if (strcmp(name, "spacing") == 0) {
-            spacing_ = clamp(value, 1, 100);
+            if (value < 1 || value > 100) {
+                return "Spacing must be 1-100";
+            }
+            spacing_ = value;
         }
+        return nullptr;
     }
     
-    void reset() override {}
+    void reset() override {
+        spacing_ = 1;
+        brightness_ = 100;
+    }
 };
 
 class BreathePattern : public PatternBase {
@@ -447,6 +459,8 @@ public:
             auto d = duration_ * 2;
             double cycle_position = (double)(elapsed % d) / d;
             double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
+            // Apply 5% minimum brightness floor for better aesthetics
+            amplitude = 0.05 + (amplitude * 0.95);
             blended = mix_colors(Color(0, 0, 0), global_colors[0], amplitude);
         }
         else if (num_colors > 1) {
@@ -471,16 +485,25 @@ public:
         }
     }
     
-    void set_parameter_int(const char* name, int value) override {
+    const char* set_parameter_int(const char* name, int value) override {
         if (strcmp(name, "brightness") == 0) {
-            brightness_ = clamp(value, 0, 100);
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
         } else if (strcmp(name, "duration") == 0) {
-            duration_ = clamp(value, 1000, 10000);
+            if (value < 1000 || value > 10000) {
+                return "Duration must be 1000-10000 milliseconds";
+            }
+            duration_ = value;
         }
+        return nullptr;
     }
     
     void reset() override {
         cycle_start_ms_ = 0;
+        duration_ = 6000;
+        brightness_ = 100;
     }
 };
 
@@ -512,6 +535,15 @@ public:
     PatternBase* get_pattern_by_name(const char* name) const {
         for (auto* pattern : patterns_) {
             if (strcmp(pattern->get_name(), name) == 0) {
+                return pattern;
+            }
+        }
+        return nullptr;
+    }
+    
+    PatternBase* get_pattern_by_name_case_insensitive(const char* name) const {
+        for (auto* pattern : patterns_) {
+            if (strcasecmp(pattern->get_name(), name) == 0) {
                 return pattern;
             }
         }
@@ -1902,6 +1934,8 @@ void setup() {
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
   commands.emplace_back(
     Command("pattern_param", cmd_pattern_param, "Set pattern parameter: param <name> <value>"));
+  commands.emplace_back(
+    Command("pattern_reset", cmd_pattern_reset, "Reset pattern to defaults"));
 
 
 #if not defined(use_fastled)
@@ -2988,54 +3022,160 @@ void cmd_pattern_info(CommandEnvironment &env) {
 }
 
 void cmd_pattern_discover(CommandEnvironment &env) {
-    // Output JSON definitions for testing
-    env.cout.println(pattern_registry.patterns_to_json());
+    // Output JSON definitions with pretty formatting for console
+    const char* json = pattern_registry.patterns_to_json();
+    
+    // Simple pretty-print: add newlines and indentation
+    String result = "";
+    int indent = 0;
+    bool in_string = false;
+    
+    for (int i = 0; json[i] != '\0'; i++) {
+        char c = json[i];
+        
+        // Track string state (ignore escaped quotes)
+        if (c == '\"' && (i == 0 || json[i-1] != '\\\\')) {
+            in_string = !in_string;
+        }
+        
+        if (!in_string) {
+            if (c == '{' || c == '[') {
+                result += c;
+                result += "\\n";
+                indent += 2;
+                for (int j = 0; j < indent; j++) result += " ";
+            } else if (c == '}' || c == ']') {
+                result += "\\n";
+                indent -= 2;
+                for (int j = 0; j < indent; j++) result += " ";
+                result += c;
+            } else if (c == ',') {
+                result += c;
+                result += "\\n";
+                for (int j = 0; j < indent; j++) result += " ";
+            } else if (c == ':') {
+                result += ": ";
+            } else {
+                result += c;
+            }
+        } else {
+            result += c;
+        }
+    }
+    
+    env.cout.println(result);
 }
 
 void cmd_pattern_set(CommandEnvironment &env) {
     if (env.args.getParamCount() < 1) {
-        env.cerr.println("Usage: pattern_set <pattern_name>");
+        // Query mode - show current pattern and available patterns
+        PatternBase* active = pattern_registry.get_active_pattern();
+        if (active) {
+            env.cout.printf("Current pattern: %s\n", active->get_name());
+        }
+        env.cout.println("Usage: pattern_set <pattern_name>");
+        env.cout.println("Available patterns:");
+        for (int i = 0; i < pattern_registry.get_pattern_count(); i++) {
+            PatternBase* p = pattern_registry.get_pattern(i);
+            env.cout.printf("  %s\n", p->get_name());
+        }
         return;
     }
     
     const char* pattern_name = env.args.getCmdParam(1);
+    // Try exact match first
     PatternBase* pattern = pattern_registry.get_pattern_by_name(pattern_name);
     
+    // If not found, try case-insensitive match
+    if (!pattern) {
+        pattern = pattern_registry.get_pattern_by_name_case_insensitive(pattern_name);
+    }
+    
     if (pattern) {
-        pattern_registry.set_active_pattern(pattern_name);
+        pattern_registry.set_active_pattern(pattern->get_name());
         use_patterns = true;  // Enable pattern rendering
         turn_on();
         
         // Set corresponding light mode for the pattern
-        if (strcmp(pattern_name, "Solid") == 0) {
+        if (strcmp(pattern->get_name(), "Solid") == 0) {
             set_light_mode(mode_solid);
-        } else if (strcmp(pattern_name, "Breathe") == 0) {
+        } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
             set_light_mode(mode_breathe);
         }
         
-        env.cout.printf("Activated pattern: %s\n", pattern_name);
+        env.cout.printf("Activated pattern: %s\n", pattern->get_name());
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
     }
 }
 
-void cmd_pattern_param(CommandEnvironment &env) {
-    if (env.args.getParamCount() < 2) {
-        env.cerr.println("Usage: pattern_param <parameter_name> <value>");
-        env.cerr.println("Examples:");
-        env.cerr.println("  pattern_param duration 3000");
-        env.cerr.println("  pattern_param spacing 5");
-        env.cerr.println("  pattern_param brightness 75");
-        return;
+// Helper function to validate parameter names
+bool is_valid_parameter_name(PatternBase* pattern, const char* name) {
+    // Check global parameters
+    auto global_params = pattern->get_global_parameters_used();
+    for (const char* p : global_params) {
+        if (strcmp(p, name) == 0) return true;
     }
     
+    // Check local parameters
+    auto local_params = pattern->get_local_parameters();
+    for (const auto& p : local_params) {
+        if (strcmp(p.name, name) == 0) return true;
+    }
+    
+    return false;
+}
+
+void cmd_pattern_param(CommandEnvironment &env) {
     PatternBase* active = pattern_registry.get_active_pattern();
     if (!active) {
         env.cerr.println("No active pattern");
         return;
     }
     
+    if (env.args.getParamCount() < 1) {
+        // Query mode - show current parameter values
+        env.cout.printf("Pattern: %s\n", active->get_name());
+        env.cout.println("Current parameters:");
+        env.cout.printf("  colors: ");
+        for (int i = 0; i < global_color_count; i++) {
+            if (i > 0) env.cout.print(", ");
+            env.cout.printf("#%02X%02X%02X", global_colors[i].r, global_colors[i].g, global_colors[i].b);
+        }
+        env.cout.println();
+        env.cout.println("\nUsage: pattern_param <parameter_name> <value>");
+        env.cout.println("Examples:");
+        env.cout.println("  pattern_param duration 3000");
+        env.cout.println("  pattern_param spacing 5");
+        env.cout.println("  pattern_param colors #FF0000 #00FF00");
+        return;
+    }
+    
+    if (env.args.getParamCount() < 2) {
+        env.cerr.println("Usage: pattern_param <parameter_name> <value>");
+        return;
+    }
+    
     const char* param_name = env.args.getCmdParam(1);
+    
+    // Validate parameter name
+    if (!is_valid_parameter_name(active, param_name)) {
+        env.cerr.printf("Invalid parameter '%s' for pattern '%s'\n", param_name, active->get_name());
+        env.cerr.println("Valid parameters:");
+        
+        // Show global parameters
+        auto global_params = active->get_global_parameters_used();
+        for (const char* p : global_params) {
+            env.cerr.printf("  %s (global)\n", p);
+        }
+        
+        // Show local parameters
+        auto local_params = active->get_local_parameters();
+        for (const auto& p : local_params) {
+            env.cerr.printf("  %s (local)\n", p.name);
+        }
+        return;
+    }
     
     // Handle different parameter types
     if (strcmp(param_name, "colors") == 0) {
@@ -3090,9 +3230,31 @@ void cmd_pattern_param(CommandEnvironment &env) {
         // Assume integer parameter - only use arg 2
         const char* param_value = env.args.getCmdParam(2);
         int value = atoi(param_value);
-        active->set_parameter_int(param_name, value);
+        const char* error = active->set_parameter_int(param_name, value);
+        if (error) {
+            env.cerr.printf("Error: %s\n", error);
+            return;
+        }
         env.cout.printf("Set %s = %d\n", param_name, value);
     }
+}
+
+// Reset active pattern to defaults and restore warm white color
+void cmd_pattern_reset(CommandEnvironment &env) {
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (!active) {
+        env.cerr.println("No active pattern");
+        return;
+    }
+    
+    // Reset pattern-specific parameters to defaults
+    active->reset();
+    
+    // Reset global colors to warm white
+    global_colors[0] = CRGB(0xFF, 0xA5, 0x00);
+    global_color_count = 1;
+    
+    env.cout.println("Pattern reset to defaults: warm white (#FFA500)");
 }
 
 // Helper function to render using pattern system - called from loop()
@@ -3125,4 +3287,5 @@ void publish_pattern_definitions() {
     Serial.print("  Payload length: ");
     Serial.println(strlen(json));
 }
+
 
