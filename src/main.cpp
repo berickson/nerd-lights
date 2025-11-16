@@ -1052,16 +1052,16 @@ void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); turn_on(
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); turn_on();}
 void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on();}
 void cmd_solid(CommandEnvironment &env) { 
+  use_patterns = false;  // Use legacy rendering
   set_light_mode(mode_solid); 
   turn_on();
-  // TODO: pattern_registry.set_active_pattern("Solid"); when patterns are active
 }
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_breathe(CommandEnvironment &env) { 
+  use_patterns = false;  // Use legacy rendering
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
   set_light_mode(mode_breathe); 
   turn_on();
-  // TODO: pattern_registry.set_active_pattern("Breathe"); when patterns are active
 }
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
@@ -2525,10 +2525,24 @@ Below stuff would be good for a config page
           confetti();
           break;
         case mode_breathe:
-          breathe();
+          if (use_patterns) {
+            PatternBase* active = pattern_registry.get_active_pattern();
+            if (active) {
+              active->render(&leds[0], led_count, clock_millis());
+            }
+          } else {
+            breathe();
+          }
           break;
         case mode_solid:
-          solid(current_colors);
+          if (use_patterns) {
+            PatternBase* active = pattern_registry.get_active_pattern();
+            if (active) {
+              active->render(&leds[0], led_count, clock_millis());
+            }
+          } else {
+            solid(current_colors);
+          }
           break;
       }
     } else {
@@ -2976,6 +2990,7 @@ public:
 SolidPattern solid_pattern;
 BreathePattern breathe_pattern;
 PatternRegistry pattern_registry;
+bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
 
 // Pattern system console commands
 void cmd_pattern_list(CommandEnvironment &env) {
@@ -3047,6 +3062,16 @@ void cmd_pattern_set(CommandEnvironment &env) {
     
     if (pattern) {
         pattern_registry.set_active_pattern(pattern_name);
+        use_patterns = true;  // Enable pattern rendering
+        turn_on();
+        
+        // Set corresponding light mode for the pattern
+        if (strcmp(pattern_name, "Solid") == 0) {
+            set_light_mode(mode_solid);
+        } else if (strcmp(pattern_name, "Breathe") == 0) {
+            set_light_mode(mode_breathe);
+        }
+        
         env.cout.printf("Activated pattern: %s\n", pattern_name);
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
