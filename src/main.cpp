@@ -1049,13 +1049,17 @@ void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); turn_o
 void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); turn_on();}
 void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); turn_on();}
 void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on();}
-void cmd_solid(CommandEnvironment &env) { set_light_mode(mode_solid); turn_on();}
+void cmd_solid(CommandEnvironment &env) { 
+  set_light_mode(mode_solid); 
+  turn_on();
+  pattern_registry.set_active_pattern("Solid");
+}
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_breathe(CommandEnvironment &env) { 
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
   set_light_mode(mode_breathe); 
   turn_on();
-
+  pattern_registry.set_active_pattern("Breathe");
 }
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
@@ -1151,6 +1155,12 @@ void cmd_duration(CommandEnvironment &env) {
     }
     breathe_duration_ms = new_duration_ms;
     breathe_cycle_start_ms = 0;  // Reset cycle when duration changes
+    
+    // Also configure active Breathe pattern if it's active
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (active && strcmp(active->get_name(), "Breathe") == 0) {
+      active->set_parameter_int("duration", new_duration_ms);
+    }
   }
   env.cout.print("duration = ");
   env.cout.print(breathe_duration_ms);
@@ -1172,6 +1182,12 @@ void cmd_spacing(CommandEnvironment &env) {
     preferences.begin("main");
     preferences.putInt("spacing", pattern_spacing);
     preferences.end();
+    
+    // Also configure active Solid pattern if it's active
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (active && strcmp(active->get_name(), "Solid") == 0) {
+      active->set_parameter_int("spacing", new_spacing);
+    }
   }
   env.cout.print("spacing = ");
   env.cout.println(pattern_spacing);
