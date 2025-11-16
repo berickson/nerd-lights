@@ -114,6 +114,7 @@ void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
 void init_pattern_system();
+void publish_pattern_definitions();
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -1632,6 +1633,9 @@ void setup() {
 
   // Initialize pattern system (must be called after all other setup)
   init_pattern_system();
+  
+  // Publish pattern definitions to MQTT (after MQTT is configured)
+  publish_pattern_definitions();
 
 }  // setup
 
@@ -3049,5 +3053,19 @@ void init_pattern_system() {
     pattern_registry.register_pattern(&breathe_pattern);
     pattern_registry.set_active_pattern("Solid");
     Serial.println("Pattern registry initialized");
+}
+
+// Publish pattern definitions to MQTT - called from setup() after pattern init
+void publish_pattern_definitions() {
+    char topic[100];
+    snprintf(topic, 99, "controllers/%s/patterns", mqtt_client_id);
+    const char* json = pattern_registry.patterns_to_json();
+    mqtt.publish(topic, json, true); // retained=true
+    
+    Serial.println("Published pattern definitions to MQTT:");
+    Serial.print("  Topic: ");
+    Serial.println(topic);
+    Serial.print("  Payload length: ");
+    Serial.println(strlen(json));
 }
 
