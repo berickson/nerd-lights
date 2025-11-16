@@ -107,6 +107,9 @@ bool pending_program_sync = true;
 unsigned long sync_start_time = 0;
 const unsigned long retained_message_timeout = 5000; // 5 seconds
 
+// Pattern system control flag
+bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
+
 // Forward declarations
 void set_program(JsonDocument & doc);
 void cmd_pattern_list(CommandEnvironment &env);
@@ -116,7 +119,10 @@ void cmd_pattern_set(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 
-// Pattern system will be defined later in the file
+// Pattern system forward declarations (actual classes defined later)
+class PatternBase;
+class PatternRegistry;
+extern PatternRegistry pattern_registry;
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -2990,7 +2996,6 @@ public:
 SolidPattern solid_pattern;
 BreathePattern breathe_pattern;
 PatternRegistry pattern_registry;
-bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
 
 // Pattern system console commands
 void cmd_pattern_list(CommandEnvironment &env) {
