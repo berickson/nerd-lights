@@ -318,7 +318,7 @@ struct ParameterDef {
 
 class PatternBase {
 public:
-    virtual ~PatternBase() = default();
+    virtual ~PatternBase() = default;
     
     virtual const char* get_name() const = 0;
     virtual const char* get_description() const = 0;
@@ -450,7 +450,7 @@ public:
             cycle_start_ms_ = time_ms;
         }
 
-        Color blended = black;
+        Color blended = Color(0, 0, 0);
         const int num_colors = color_count_;
         
         if (num_colors == 1) {
@@ -458,7 +458,7 @@ public:
             auto d = duration_ * 2;
             double cycle_position = (double)(elapsed % d) / d;
             double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
-            blended = mix_colors(black, colors_[0], amplitude);
+            blended = mix_colors(Color(0, 0, 0), colors_[0], amplitude);
         }
         else if (num_colors > 1) {
             uint32_t total_elapsed = time_ms - cycle_start_ms_;
