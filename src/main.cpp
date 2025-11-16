@@ -3137,12 +3137,21 @@ void cmd_pattern_param(CommandEnvironment &env) {
         // Query mode - show current parameter values
         env.cout.printf("Pattern: %s\n", active->get_name());
         env.cout.println("Current parameters:");
+        
+        // Show global colors
         env.cout.printf("  colors: ");
         for (int i = 0; i < global_color_count; i++) {
             if (i > 0) env.cout.print(", ");
             env.cout.printf("#%02X%02X%02X", global_colors[i].r, global_colors[i].g, global_colors[i].b);
         }
         env.cout.println();
+        
+        // Show local parameters
+        auto local_params = active->get_local_parameters();
+        for (const auto& p : local_params) {
+            env.cout.printf("  %s: %d\n", p.name, p.value);
+        }
+        
         env.cout.println("\nUsage: pattern_param <parameter_name> <value>");
         env.cout.println("Examples:");
         env.cout.println("  pattern_param duration 3000");
