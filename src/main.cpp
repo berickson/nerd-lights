@@ -116,6 +116,7 @@ void cmd_pattern_list(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
+void cmd_pattern_param(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 void render_with_pattern_system();
@@ -1164,7 +1165,14 @@ void cmd_duration(CommandEnvironment &env) {
     }
     breathe_duration_ms = new_duration_ms;
     breathe_cycle_start_ms = 0;  // Reset cycle when duration changes
-    // TODO: Also configure active Breathe pattern when patterns are active
+    
+    // Also configure active pattern if using pattern system
+    if (use_patterns) {
+      PatternBase* active = pattern_registry.get_active_pattern();
+      if (active) {
+        active->set_parameter_int("duration", new_duration_ms);
+      }
+    }
   }
   env.cout.print("duration = ");
   env.cout.print(breathe_duration_ms);
@@ -1186,7 +1194,14 @@ void cmd_spacing(CommandEnvironment &env) {
     preferences.begin("main");
     preferences.putInt("spacing", pattern_spacing);
     preferences.end();
-    // TODO: Also configure active Solid pattern when patterns are active
+    
+    // Also configure active pattern if using pattern system
+    if (use_patterns) {
+      PatternBase* active = pattern_registry.get_active_pattern();
+      if (active) {
+        active->set_parameter_int("spacing", new_spacing);
+      }
+    }
   }
   env.cout.print("spacing = ");
   env.cout.println(pattern_spacing);
@@ -1563,6 +1578,8 @@ void setup() {
     Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
   commands.emplace_back(
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
+  commands.emplace_back(
+    Command("pattern_param", cmd_pattern_param, "Set pattern parameter: param <name> <value>"));
 
 
 #if not defined(use_fastled)
@@ -3075,6 +3092,61 @@ void cmd_pattern_set(CommandEnvironment &env) {
         env.cout.printf("Activated pattern: %s\n", pattern_name);
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
+    }
+}
+
+void cmd_pattern_param(CommandEnvironment &env) {
+    if (env.args.getParamCount() < 2) {
+        env.cerr.println("Usage: pattern_param <parameter_name> <value>");
+        env.cerr.println("Examples:");
+        env.cerr.println("  pattern_param duration 3000");
+        env.cerr.println("  pattern_param spacing 5");
+        env.cerr.println("  pattern_param brightness 75");
+        return;
+    }
+    
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (!active) {
+        env.cerr.println("No active pattern");
+        return;
+    }
+    
+    const char* param_name = env.args.getCmdParam(1);
+    const char* param_value = env.args.getCmdParam(2);
+    
+    // Handle different parameter types
+    if (strcmp(param_name, "colors") == 0) {
+        // Parse color value (hex format: #RRGGBB or R,G,B)
+        Color color;
+        if (param_value[0] == '#' && strlen(param_value) == 7) {
+            // Hex format: #RRGGBB
+            unsigned int r, g, b;
+            sscanf(param_value + 1, "%02x%02x%02x", &r, &g, &b);
+            color.r = r;
+            color.g = g;
+            color.b = b;
+        } else {
+            // Try R,G,B format
+            int r, g, b;
+            if (sscanf(param_value, "%d,%d,%d", &r, &g, &b) == 3) {
+                color.r = constrain(r, 0, 255);
+                color.g = constrain(g, 0, 255);
+                color.b = constrain(b, 0, 255);
+            } else {
+                env.cerr.println("Invalid color format. Use #RRGGBB or R,G,B");
+                return;
+            }
+        }
+        
+        Color colors[] = {color};
+        active->set_parameter_colors(param_name, colors, 1);
+        env.cout.printf("Set %s = #%02X%02X%02X\n", param_name, color.r, color.g, color.b);
+        
+    } else {
+        // Assume integer parameter
+        int value = atoi(param_value);
+        active->set_parameter_int(param_name, value);
+        env.cout.printf("Set %s = %d\n", param_name, value);
     }
 }
 
