@@ -3046,24 +3046,26 @@ void cmd_pattern_param(CommandEnvironment &env) {
     }
     
     const char* param_name = env.args.getCmdParam(1);
-    const char* param_value = env.args.getCmdParam(2);
     
     // Handle different parameter types
     if (strcmp(param_name, "colors") == 0) {
-        // Parse color values - supports multiple colors separated by commas
-        // Formats: #RRGGBB,#RRGGBB,... or single color
+        // For colors, concatenate all remaining arguments (space-separated colors)
+        // This allows: pattern_param colors #FF0000 #00FF00 #0000FF
+        char value_buffer[256] = "";
+        int param_count = env.args.getParamCount();
+        
+        for (int i = 2; i <= param_count; i++) {
+            if (i > 2) strcat(value_buffer, " ");
+            strcat(value_buffer, env.args.getCmdParam(i));
+        }
+        
+        // Parse color values - supports multiple colors separated by spaces
         Color colors[10];
         int color_count = 0;
         
-        // Create a working copy since strtok modifies the string
-        char value_copy[256];
-        strncpy(value_copy, param_value, sizeof(value_copy) - 1);
-        value_copy[sizeof(value_copy) - 1] = '\0';
-        
-        // Split by comma or space and parse each color
-        char* token = strtok(value_copy, ", \t");
+        // Split by space and parse each color
+        char* token = strtok(value_buffer, " \t");
         while (token != NULL && color_count < 10) {
-            // Token is already trimmed by strtok
             
             if (token[0] == '#' && strlen(token) >= 7) {
                 // Hex format: #RRGGBB
@@ -3074,24 +3076,14 @@ void cmd_pattern_param(CommandEnvironment &env) {
                     colors[color_count].b = b;
                     color_count++;
                 }
-            } else {
-                // Try decimal R G B format (space or comma separated within this token)
-                int r, g, b;
-                if (sscanf(token, "%d %d %d", &r, &g, &b) == 3 ||
-                    sscanf(token, "%d,%d,%d", &r, &g, &b) == 3) {
-                    colors[color_count].r = constrain(r, 0, 255);
-                    colors[color_count].g = constrain(g, 0, 255);
-                    colors[color_count].b = constrain(b, 0, 255);
-                    color_count++;
-                }
             }
             
-            token = strtok(NULL, ", \t");
+            token = strtok(NULL, " \t");
         }
         
         if (color_count == 0) {
-            env.cerr.println("Invalid color format. Use:");
-            env.cerr.println("  Single: #RRGGBB or R,G,B");
+            env.cerr.println("Invalid color format. Use hex: #RRGGBB");
+            env.cerr.println("  Single: #FF0000");
             env.cerr.println("  Multiple: #FF0000 #00FF00 #0000FF");
             return;
         }
@@ -3107,7 +3099,8 @@ void cmd_pattern_param(CommandEnvironment &env) {
         env.cout.println();
         
     } else {
-        // Assume integer parameter
+        // Assume integer parameter - only use arg 2
+        const char* param_value = env.args.getCmdParam(2);
         int value = atoi(param_value);
         active->set_parameter_int(param_name, value);
         env.cout.printf("Set %s = %d\n", param_name, value);
