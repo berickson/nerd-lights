@@ -1162,7 +1162,7 @@ void cmd_spacing(CommandEnvironment &env) {
       env.cerr.printf("failed - spacing must be between 1 and 100 pixels");
       return;
     }
-    pattern_spacing = new_spacing;
+    pattern_spacing = (uint16_t)new_spacing;
     preferences.begin("main");
     preferences.putInt("spacing", pattern_spacing);
     preferences.end();
@@ -2139,14 +2139,15 @@ void stripes(const std::vector<Color> & colors, bool is_tree = false) {
 void normal(const std::vector<Color> & colors, uint16_t repeat_count = 1) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / repeat_count) % colors.size()];
-    leds[i]=color;
+    leds[i] = color;
   }
 }
 
+// Solid pattern - displays colors with configurable spacing
 void solid(const std::vector<Color> & colors) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / pattern_spacing) % colors.size()];
-    leds[i]=color;
+    leds[i] = color;
   }
 }
 
