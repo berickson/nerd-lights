@@ -113,14 +113,7 @@ void cmd_pattern_list(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
-
-// Pattern system forward declarations
-class SolidPattern;
-class BreathePattern;
-class PatternRegistry;
-extern SolidPattern solid_pattern;
-extern BreathePattern breathe_pattern;
-extern PatternRegistry pattern_registry;
+void init_pattern_system();
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -1555,12 +1548,6 @@ void setup() {
   commands.emplace_back(
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
 
-  // Initialize pattern registry
-  pattern_registry.register_pattern(&solid_pattern);
-  pattern_registry.register_pattern(&breathe_pattern);
-  pattern_registry.set_active_pattern("Solid");
-  Serial.println("Pattern registry initialized");
-
 
 #if not defined(use_fastled)
   digitalLeds_initDriver();
@@ -1643,6 +1630,8 @@ void setup() {
   mqtt.setServer("nerdlights.net", 1883);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
+  // Initialize pattern system (must be called after all other setup)
+  init_pattern_system();
 
 }  // setup
 
@@ -3052,5 +3041,13 @@ void cmd_pattern_set(CommandEnvironment &env) {
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
     }
+}
+
+// Initialize the pattern system - called from setup()
+void init_pattern_system() {
+    pattern_registry.register_pattern(&solid_pattern);
+    pattern_registry.register_pattern(&breathe_pattern);
+    pattern_registry.set_active_pattern("Solid");
+    Serial.println("Pattern registry initialized");
 }
 
