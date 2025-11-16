@@ -116,10 +116,7 @@ void cmd_pattern_set(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 
-// Pattern system forward declarations
-class PatternBase;
-class PatternRegistry;
-extern PatternRegistry pattern_registry;
+// Pattern system will be defined later in the file
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -1057,14 +1054,14 @@ void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on(
 void cmd_solid(CommandEnvironment &env) { 
   set_light_mode(mode_solid); 
   turn_on();
-  pattern_registry.set_active_pattern("Solid");
+  // TODO: pattern_registry.set_active_pattern("Solid"); when patterns are active
 }
 void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_breathe(CommandEnvironment &env) { 
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
   set_light_mode(mode_breathe); 
   turn_on();
-  pattern_registry.set_active_pattern("Breathe");
+  // TODO: pattern_registry.set_active_pattern("Breathe"); when patterns are active
 }
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
@@ -1160,12 +1157,7 @@ void cmd_duration(CommandEnvironment &env) {
     }
     breathe_duration_ms = new_duration_ms;
     breathe_cycle_start_ms = 0;  // Reset cycle when duration changes
-    
-    // Also configure active Breathe pattern if it's active
-    PatternBase* active = pattern_registry.get_active_pattern();
-    if (active && strcmp(active->get_name(), "Breathe") == 0) {
-      active->set_parameter_int("duration", new_duration_ms);
-    }
+    // TODO: Also configure active Breathe pattern when patterns are active
   }
   env.cout.print("duration = ");
   env.cout.print(breathe_duration_ms);
@@ -1187,12 +1179,7 @@ void cmd_spacing(CommandEnvironment &env) {
     preferences.begin("main");
     preferences.putInt("spacing", pattern_spacing);
     preferences.end();
-    
-    // Also configure active Solid pattern if it's active
-    PatternBase* active = pattern_registry.get_active_pattern();
-    if (active && strcmp(active->get_name(), "Solid") == 0) {
-      active->set_parameter_int("spacing", new_spacing);
-    }
+    // TODO: Also configure active Solid pattern when patterns are active
   }
   env.cout.print("spacing = ");
   env.cout.println(pattern_spacing);
