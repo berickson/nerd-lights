@@ -1041,8 +1041,7 @@ void cmd_breathe(CommandEnvironment &env) {
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
   set_light_mode(mode_breathe); 
   turn_on();
-  env.cout.println("ok");
-  env.ok = true;
+
 }
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
@@ -1615,28 +1614,6 @@ void gradient(bool is_tree = true) {
     Color color = mix_colors(color_a, color_b, r.percent);
     leds[i] = color;
   }
-
-  // size_t n_colors =  current_colors.size();
-  // int divisions = (n_colors < 2) ? 1: n_colors -1;
-  // int division = 1;
-  // double division_start = 0;
-  // double percent = (double)division/divisions;
-  // double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
-
-  // //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
-  // for(int i = 0; i<led_count; ++i) {
-  //   if(i>division_end) {
-  //     ++division;
-  //     division_start = division_end;
-  //     percent = (double)division/divisions;
-  //     division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
-  //   }
-  //   uint32_t color_a = current_colors[(division-1)%n_colors]; // modulus might be unnecessary, but prevents overflow
-  //   uint32_t color_b = current_colors[(division)%n_colors];
-  //   double part_b = (i-division_start)/(division_end-division_start);
-  //   uint32_t color = mix_colors(color_a, color_b, part_b);
-  //   leds[i]=color;
-  // }
 }
 
 // percent is visual and goes [0,1]
@@ -2063,13 +2040,16 @@ void breathe() {
     breathe_cycle_start_ms = ms;
   }
 
+  // note: if num_colors is zero, this forces them to be black
   Color blended = black;
   
-  int num_colors = current_colors.size();
+  const int num_colors = current_colors.size();
   
   // Special case: single color - breathe between black and that color
   if (num_colors == 1) {
     uint32_t elapsed = ms - breathe_cycle_start_ms;
+    // we use half the duration so color to black will
+    // take the same time as color to color below
     double d = breathe_duration_ms * 2;
     double cycle_position = (double)(elapsed % d) / d;
     
@@ -2077,13 +2057,7 @@ void breathe() {
     double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
     
     // Blend between black and the color
-    Color black = Color(0, 0, 0);
-    Color blended = mix_colors(black, current_colors[0], amplitude);
-    
-    for (int i = 0; i < led_count; ++i) {
-      leds[i] = blended;
-    }
-    return;
+    blended = mix_colors(black, current_colors[0], amplitude);
   }
   else if (num_colors > 1) {
   
@@ -2101,7 +2075,7 @@ void breathe() {
     
     // Sine wave interpolation (0.0 to 1.0)
     double amplitude = (sin(cycle_position * PI - PI/2) + 1.0) / 2.0;
-    double blend_factor = amplitude; // gamma_percent( amplitude); 
+    double blend_factor = amplitude;
     
     // Get the two colors to blend between
     Color color1 = current_colors[color_index % num_colors];
