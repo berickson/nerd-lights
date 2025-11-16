@@ -1633,9 +1633,6 @@ void setup() {
 
   // Initialize pattern system (must be called after all other setup)
   init_pattern_system();
-  
-  // Publish pattern definitions to MQTT (after MQTT is configured)
-  publish_pattern_definitions();
 
 }  // setup
 
@@ -2379,6 +2376,7 @@ void loop() {
     
     publish_statistics();
     publish_settings();
+    publish_pattern_definitions();  // Publish pattern definitions on connect
     // NOTE: lights_on status now handled through observable pattern (actuals topic)
   }
 
