@@ -1041,6 +1041,8 @@ void cmd_breathe(CommandEnvironment &env) {
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
   set_light_mode(mode_breathe); 
   turn_on();
+  env.cout.println("ok");
+  env.ok = true;
 }
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
@@ -2060,34 +2062,54 @@ void breathe() {
   if (breathe_cycle_start_ms == 0) {
     breathe_cycle_start_ms = ms;
   }
+
+  Color blended = black;
   
   int num_colors = current_colors.size();
-  if (num_colors == 0) {
-    return; // No colors to breathe
+  
+  // Special case: single color - breathe between black and that color
+  if (num_colors == 1) {
+    uint32_t elapsed = ms - breathe_cycle_start_ms;
+    double d = breathe_duration_ms * 2;
+    double cycle_position = (double)(elapsed % d) / d;
+    
+    // Full sine wave for smooth breathing (0.0 to 1.0 and back to 0.0)
+    double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
+    
+    // Blend between black and the color
+    Color black = Color(0, 0, 0);
+    Color blended = mix_colors(black, current_colors[0], amplitude);
+    
+    for (int i = 0; i < led_count; ++i) {
+      leds[i] = blended;
+    }
+    return;
   }
+  else if (num_colors > 1) {
   
-  // Calculate total elapsed time to determine which color pair we're breathing between
-  uint32_t total_elapsed = ms - breathe_cycle_start_ms;
-  uint32_t total_cycle_duration = breathe_duration_ms * num_colors;
-  uint32_t position_in_all_cycles = total_elapsed % total_cycle_duration;
-  
-  // Which color transition are we in? (0 = color0->color1, 1 = color1->color2, etc.)
-  int color_index = position_in_all_cycles / breathe_duration_ms;
-  uint32_t elapsed_in_cycle = position_in_all_cycles % breathe_duration_ms;
-  
-  // Position within this specific color transition (0.0 to 1.0)
-  double cycle_position = (double)elapsed_in_cycle / breathe_duration_ms;
-  
-  // Sine wave interpolation (0.0 to 1.0)
-  double amplitiude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
-  double blend_factor = gamma_percent(amplitude);
-  
-  // Get the two colors to blend between
-  Color color1 = current_colors[color_index];
-  Color color2 = current_colors[(color_index + 1) % num_colors];
-  
-  // Interpolate between the two colors using mix_colors
-  Color blended = mix_colors(color1, color2, blend_factor);
+    // Calculate total elapsed time to determine which color pair we're breathing between
+    uint32_t total_elapsed = ms - breathe_cycle_start_ms;
+    uint32_t total_cycle_duration = breathe_duration_ms * num_colors;
+    uint32_t position_in_all_cycles = total_elapsed % total_cycle_duration;
+    
+    // Which color transition are we in? (0 = color0->color1, 1 = color1->color2, etc.)
+    int color_index = position_in_all_cycles / breathe_duration_ms;
+    uint32_t elapsed_in_cycle = position_in_all_cycles % breathe_duration_ms;
+    
+    // Position within this specific color transition (0.0 to 1.0)
+    double cycle_position = (double)elapsed_in_cycle / breathe_duration_ms;
+    
+    // Sine wave interpolation (0.0 to 1.0)
+    double amplitude = (sin(cycle_position * PI - PI/2) + 1.0) / 2.0;
+    double blend_factor = amplitude; // gamma_percent( amplitude); 
+    
+    // Get the two colors to blend between
+    Color color1 = current_colors[color_index % num_colors];
+    Color color2 = current_colors[(color_index + 1) % num_colors];
+    
+    // Interpolate between the two colors using mix_colors
+    blended = mix_colors(color1, color2, blend_factor);
+  }
   
   // Apply the same color to all LEDs
   for (int i = 0; i < led_count; ++i) {
