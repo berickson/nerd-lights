@@ -110,7 +110,7 @@ const unsigned long retained_message_timeout = 5000; // 5 seconds
 // Pattern system control flag
 bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
 
-// Forward declarations
+// Forward declarations for functions defined after pattern classes
 void set_program(JsonDocument & doc);
 void cmd_pattern_list(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
@@ -120,11 +120,6 @@ void cmd_pattern_param(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
 void render_with_pattern_system();
-
-// Pattern system forward declarations (actual classes defined later)
-class PatternBase;
-class PatternRegistry;
-extern PatternRegistry pattern_registry;
 
 //#define use_fastled
 #if defined(use_fastled)
@@ -286,6 +281,343 @@ const char * light_mode_name(LightMode mode) {
   }
   return "mode_not_found";
 }
+
+////////////////////////////////////////////
+// ====== PATTERN SYSTEM CLASSES ======
+// These come early so command functions can call their methods
+////////////////////////////////////////////
+
+// Parameter types for pattern configuration
+enum class ParameterType {
+    PERCENTAGE,
+    NUMBER,
+    COLORS,
+    MOVEMENT,
+    DURATION
+};
+
+// Global parameter names (predefined vocabulary)
+const char* GLOBAL_PARAM_BRIGHTNESS = "brightness";
+const char* GLOBAL_PARAM_COLORS = "colors";
+const char* GLOBAL_PARAM_MOVEMENT = "movement";
+const char* GLOBAL_PARAM_DURATION = "duration";
+const char* GLOBAL_PARAM_FADE = "fade";
+const char* GLOBAL_PARAM_REPEATS = "repeats";
+const char* GLOBAL_PARAM_RATE = "rate";
+
+struct ParameterDef {
+    const char* name;
+    ParameterType type;
+    const char* description;
+    int default_value;
+    int min_value;
+    int max_value;
+    const char* unit;
+    const char* scale;
+};
+
+class PatternBase {
+public:
+    virtual ~PatternBase() = default();
+    
+    virtual const char* get_name() const = 0;
+    virtual const char* get_description() const = 0;
+    virtual const char* get_help() const = 0;
+    
+    virtual std::vector<const char*> get_global_parameters_used() const = 0;
+    virtual std::vector<ParameterDef> get_local_parameters() const = 0;
+    
+    virtual void render(Color* leds, int led_count, uint32_t time_ms) = 0;
+    
+    virtual void set_parameter_int(const char* name, int value) {}
+    virtual void set_parameter_colors(const char* name, const Color* colors, int count) {}
+    
+    virtual void reset() {}
+};
+
+class SolidPattern : public PatternBase {
+private:
+    int brightness_;
+    Color colors_[10];
+    int color_count_;
+    int spacing_;
+
+public:
+    SolidPattern() 
+        : brightness_(100), color_count_(1), spacing_(1)
+    {
+        colors_[0] = {0xFF, 0xA5, 0x00};
+    }
+    
+    const char* get_name() const override { return "Solid"; }
+    const char* get_description() const override { 
+        return "Display solid colors or repeating color patterns along the strand"; 
+    }
+    const char* get_help() const override {
+        return "Set one color for the entire strand, or multiple colors that repeat "
+               "along it. Use 'spacing' to control how many pixels show each color "
+               "before moving to the next.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        ParameterDef spacing;
+        spacing.name = "spacing";
+        spacing.type = ParameterType::NUMBER;
+        spacing.description = "How many pixels show each color before moving to the next";
+        spacing.default_value = 1;
+        spacing.min_value = 1;
+        spacing.max_value = 100;
+        spacing.unit = "px";
+        spacing.scale = "linear";
+        
+        return {spacing};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        auto apply_brightness = [this](const Color& c) -> Color {
+            float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
+            return {
+                (uint8_t)(c.r * gamma_brightness),
+                (uint8_t)(c.g * gamma_brightness),
+                (uint8_t)(c.b * gamma_brightness)
+            };
+        };
+        
+        for (int i = 0; i < led_count; i++) {
+            int color_index = (i / spacing_) % color_count_;
+            leds[i] = apply_brightness(colors_[color_index]);
+        }
+    }
+    
+    void set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            brightness_ = clamp(value, 0, 100);
+        } else if (strcmp(name, "spacing") == 0) {
+            spacing_ = clamp(value, 1, 100);
+        }
+    }
+    
+    void set_parameter_colors(const char* name, const Color* colors, int count) override {
+        if (strcmp(name, "colors") == 0 && count > 0) {
+            color_count_ = min(count, 10);
+            memcpy(colors_, colors, color_count_ * sizeof(Color));
+        }
+    }
+    
+    void reset() override {}
+};
+
+class BreathePattern : public PatternBase {
+private:
+    int brightness_;
+    Color colors_[10];
+    int color_count_;
+    int duration_;
+    uint32_t cycle_start_ms_;
+
+public:
+    BreathePattern()
+        : brightness_(100), color_count_(2), duration_(6000), cycle_start_ms_(0)
+    {
+        colors_[0] = {0x00, 0x00, 0x00};
+        colors_[1] = {0x00, 0x00, 0xFF};
+    }
+    
+    const char* get_name() const override { return "Breathe"; }
+    const char* get_description() const override {
+        return "Entire strand smoothly fades between colors like breathing";
+    }
+    const char* get_help() const override {
+        return "Creates a calming, meditative effect as the whole strand gently "
+               "transitions between colors. Use 'duration' for precise millisecond "
+               "control of each breath cycle.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors", "duration"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        if (cycle_start_ms_ == 0) {
+            cycle_start_ms_ = time_ms;
+        }
+
+        Color blended = black;
+        const int num_colors = color_count_;
+        
+        if (num_colors == 1) {
+            uint32_t elapsed = time_ms - cycle_start_ms_;
+            auto d = duration_ * 2;
+            double cycle_position = (double)(elapsed % d) / d;
+            double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
+            blended = mix_colors(black, colors_[0], amplitude);
+        }
+        else if (num_colors > 1) {
+            uint32_t total_elapsed = time_ms - cycle_start_ms_;
+            uint32_t total_cycle_duration = duration_ * num_colors;
+            uint32_t position_in_all_cycles = total_elapsed % total_cycle_duration;
+            
+            int color_index = position_in_all_cycles / duration_;
+            uint32_t elapsed_in_cycle = position_in_all_cycles % duration_;
+            
+            double cycle_position = (double)elapsed_in_cycle / duration_;
+            double amplitude = (sin(cycle_position * PI - PI/2) + 1.0) / 2.0;
+            
+            Color color1 = colors_[color_index % num_colors];
+            Color color2 = colors_[(color_index + 1) % num_colors];
+            
+            blended = mix_colors(color1, color2, amplitude);
+        }
+        
+        for (int i = 0; i < led_count; ++i) {
+            leds[i] = blended;
+        }
+    }
+    
+    void set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            brightness_ = clamp(value, 0, 100);
+        } else if (strcmp(name, "duration") == 0) {
+            duration_ = clamp(value, 1000, 10000);
+        }
+    }
+    
+    void set_parameter_colors(const char* name, const Color* colors, int count) override {
+        if (strcmp(name, "colors") == 0 && count > 0) {
+            color_count_ = min(count, 10);
+            memcpy(colors_, colors, color_count_ * sizeof(Color));
+        }
+    }
+    
+    void reset() override {
+        cycle_start_ms_ = 0;
+    }
+};
+
+class PatternRegistry {
+private:
+    std::vector<PatternBase*> patterns_;
+    PatternBase* active_pattern_;
+    
+public:
+    PatternRegistry() : active_pattern_(nullptr) {}
+    ~PatternRegistry() {}
+    
+    void register_pattern(PatternBase* pattern) {
+        patterns_.push_back(pattern);
+        if (active_pattern_ == nullptr) {
+            active_pattern_ = pattern;
+        }
+    }
+    
+    int get_pattern_count() const { return patterns_.size(); }
+    
+    PatternBase* get_pattern(int index) const {
+        if (index >= 0 && index < patterns_.size()) {
+            return patterns_[index];
+        }
+        return nullptr;
+    }
+    
+    PatternBase* get_pattern_by_name(const char* name) const {
+        for (auto* pattern : patterns_) {
+            if (strcmp(pattern->get_name(), name) == 0) {
+                return pattern;
+            }
+        }
+        return nullptr;
+    }
+    
+    void set_active_pattern(const char* name) {
+        PatternBase* pattern = get_pattern_by_name(name);
+        if (pattern) {
+            if (active_pattern_ != pattern) {
+                active_pattern_ = pattern;
+                active_pattern_->reset();
+            }
+        }
+    }
+    
+    PatternBase* get_active_pattern() const { return active_pattern_; }
+    
+    const char* patterns_to_json() const {
+        static char json_buffer[4096];
+        char* p = json_buffer;
+        
+        p += sprintf(p, "{\"patterns\":[");
+        
+        for (int i = 0; i < patterns_.size(); i++) {
+            if (i > 0) p += sprintf(p, ",");
+            
+            PatternBase* pattern = patterns_[i];
+            p += sprintf(p, "{\"name\":\"%s\",", pattern->get_name());
+            p += sprintf(p, "\"description\":\"%s\",", pattern->get_description());
+            p += sprintf(p, "\"help\":\"%s\",", pattern->get_help());
+            
+            p += sprintf(p, "\"global_parameters\":[");
+            auto global_params = pattern->get_global_parameters_used();
+            for (int j = 0; j < global_params.size(); j++) {
+                if (j > 0) p += sprintf(p, ",");
+                p += sprintf(p, "\"%s\"", global_params[j]);
+            }
+            p += sprintf(p, "],");
+            
+            p += sprintf(p, "\"local_parameters\":[");
+            auto local_params = pattern->get_local_parameters();
+            for (int j = 0; j < local_params.size(); j++) {
+                if (j > 0) p += sprintf(p, ",");
+                
+                const auto& param = local_params[j];
+                p += sprintf(p, "{");
+                p += sprintf(p, "\"name\":\"%s\",", param.name);
+                
+                const char* type_str = "unknown";
+                switch (param.type) {
+                    case ParameterType::PERCENTAGE: type_str = "percentage"; break;
+                    case ParameterType::NUMBER: type_str = "number"; break;
+                    case ParameterType::COLORS: type_str = "colors"; break;
+                    case ParameterType::MOVEMENT: type_str = "movement"; break;
+                    case ParameterType::DURATION: type_str = "duration"; break;
+                }
+                p += sprintf(p, "\"type\":\"%s\",", type_str);
+                p += sprintf(p, "\"description\":\"%s\"", param.description);
+                
+                if (param.type != ParameterType::COLORS) {
+                    p += sprintf(p, ",\"default\":%d", param.default_value);
+                    p += sprintf(p, ",\"min\":%d", param.min_value);
+                    p += sprintf(p, ",\"max\":%d", param.max_value);
+                }
+                if (param.unit) {
+                    p += sprintf(p, ",\"unit\":\"%s\"", param.unit);
+                }
+                if (param.scale) {
+                    p += sprintf(p, ",\"scale\":\"%s\"", param.scale);
+                }
+                
+                p += sprintf(p, "}");
+            }
+            
+            p += sprintf(p, "]}");
+        }
+        
+        p += sprintf(p, "]}");
+        
+        return json_buffer;
+    }
+};
+
+// Global pattern instances
+SolidPattern solid_pattern;
+BreathePattern breathe_pattern;
+PatternRegistry pattern_registry;
 
 
 void update_pixels() {
@@ -2608,408 +2940,10 @@ Below stuff would be good for a config page
 }
 
 // ============================================================================
-// Pattern System
+// Pattern System Command Functions & Helpers
 // ============================================================================
-// This section implements the new pattern class hierarchy for discoverable,
-// configurable LED patterns. Eventually this will move to separate files.
+// These come after pattern class definitions so they can call pattern methods
 
-// Pattern Base Class and Parameter Structures
-enum class ParameterType {
-    PERCENTAGE,
-    NUMBER,
-    COLORS,
-    MOVEMENT,
-    DURATION
-};
-
-// Global parameter names (predefined vocabulary)
-// These are shared across all patterns that use them
-const char* GLOBAL_PARAM_BRIGHTNESS = "brightness";
-const char* GLOBAL_PARAM_COLORS = "colors";
-const char* GLOBAL_PARAM_MOVEMENT = "movement";
-const char* GLOBAL_PARAM_DURATION = "duration";
-const char* GLOBAL_PARAM_FADE = "fade";
-const char* GLOBAL_PARAM_REPEATS = "repeats";
-const char* GLOBAL_PARAM_RATE = "rate";
-
-struct ParameterDef {
-    const char* name;
-    ParameterType type;
-    const char* description;
-    int default_value;
-    int min_value;
-    int max_value;
-    const char* unit;
-    const char* scale;  // "linear", "logarithmic", "perceptual"
-};
-
-class PatternBase {
-public:
-    virtual ~PatternBase() = default;
-    
-    // Metadata
-    virtual const char* get_name() const = 0;
-    virtual const char* get_description() const = 0;
-    virtual const char* get_help() const = 0;
-    
-    // Parameter definitions
-    virtual std::vector<const char*> get_global_parameters_used() const = 0;
-    virtual std::vector<ParameterDef> get_local_parameters() const = 0;
-    
-    // Rendering - patterns render to LED buffer
-    virtual void render(Color* leds, int led_count, uint32_t time_ms) = 0;
-    
-    // Configuration - patterns receive typed values
-    virtual void set_parameter_int(const char* name, int value) {}
-    virtual void set_parameter_colors(const char* name, const Color* colors, int count) {}
-    
-    // State management
-    virtual void reset() {}  // Reset pattern state when activated
-};
-
-// Solid Pattern Implementation
-class SolidPattern : public PatternBase {
-private:
-    int brightness_;        // 0-100
-    Color colors_[10];      // Up to 10 colors in palette
-    int color_count_;       // Number of colors in palette
-    int spacing_;           // 1-100 pixels per color
-
-public:
-    SolidPattern() 
-        : brightness_(100)
-        , color_count_(1)
-        , spacing_(1)
-    {
-        // Default warm white
-        colors_[0] = {0xFF, 0xA5, 0x00};
-    }
-    
-    // Metadata
-    const char* get_name() const override { return "Solid"; }
-    const char* get_description() const override { 
-        return "Display solid colors or repeating color patterns along the strand"; 
-    }
-    const char* get_help() const override {
-        return "Set one color for the entire strand, or multiple colors that repeat "
-               "along it. Use 'spacing' to control how many pixels show each color "
-               "before moving to the next.";
-    }
-    
-    // Parameter definitions
-    std::vector<const char*> get_global_parameters_used() const override {
-        return {"brightness", "colors"};
-    }
-    
-    std::vector<ParameterDef> get_local_parameters() const override {
-        ParameterDef spacing;
-        spacing.name = "spacing";
-        spacing.type = ParameterType::NUMBER;
-        spacing.description = "How many pixels show each color before moving to the next";
-        spacing.default_value = 1;
-        spacing.min_value = 1;
-        spacing.max_value = 100;
-        spacing.unit = "px";
-        spacing.scale = "linear";
-        
-        return {spacing};
-    }
-    
-    // Rendering - uses existing solid() logic
-    void render(Color* leds, int led_count, uint32_t time_ms) override {
-        // Apply brightness using gamma correction
-        auto apply_brightness = [this](const Color& c) -> Color {
-            // Perceptual brightness scaling (gamma correction)
-            float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
-            return {
-                (uint8_t)(c.r * gamma_brightness),
-                (uint8_t)(c.g * gamma_brightness),
-                (uint8_t)(c.b * gamma_brightness)
-            };
-        };
-        
-        // Fill LEDs with repeating color pattern (from solid() function)
-        for (int i = 0; i < led_count; i++) {
-            int color_index = (i / spacing_) % color_count_;
-            leds[i] = apply_brightness(colors_[color_index]);
-        }
-    }
-    
-    // Configuration
-    void set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            brightness_ = clamp(value, 0, 100);
-        } else if (strcmp(name, "spacing") == 0) {
-            spacing_ = clamp(value, 1, 100);
-        }
-    }
-    
-    void set_parameter_colors(const char* name, const Color* colors, int count) override {
-        if (strcmp(name, "colors") == 0 && count > 0) {
-            color_count_ = min(count, 10);
-            memcpy(colors_, colors, color_count_ * sizeof(Color));
-        }
-    }
-    
-    void reset() override {
-        // No state to reset for solid pattern
-    }
-};
-
-// Breathe Pattern Implementation
-class BreathePattern : public PatternBase {
-private:
-    int brightness_;        // 0-100
-    Color colors_[10];      // Colors to breathe between
-    int color_count_;       // Number of colors
-    int duration_;          // Milliseconds per breath cycle
-    uint32_t cycle_start_ms_; // Track cycle start for pattern
-
-public:
-    BreathePattern()
-        : brightness_(100)
-        , color_count_(2)
-        , duration_(6000)
-        , cycle_start_ms_(0)
-    {
-        // Default black to blue
-        colors_[0] = {0x00, 0x00, 0x00};
-        colors_[1] = {0x00, 0x00, 0xFF};
-    }
-    
-    // Metadata
-    const char* get_name() const override { return "Breathe"; }
-    const char* get_description() const override {
-        return "Entire strand smoothly fades between colors like breathing";
-    }
-    const char* get_help() const override {
-        return "Creates a calming, meditative effect as the whole strand gently "
-               "transitions between colors. Use 'duration' for precise millisecond "
-               "control of each breath cycle.";
-    }
-    
-    // Parameter definitions
-    std::vector<const char*> get_global_parameters_used() const override {
-        return {"brightness", "colors", "duration"};
-    }
-    
-    std::vector<ParameterDef> get_local_parameters() const override {
-        // Breathe has no local parameters
-        return {};
-    }
-    
-    // Rendering - uses exact logic from breathe() function
-    void render(Color* leds, int led_count, uint32_t time_ms) override {
-        // Initialize cycle start on first call or mode change
-        if (cycle_start_ms_ == 0) {
-            cycle_start_ms_ = time_ms;
-        }
-
-        // note: if num_colors is zero, this forces them to be black
-        Color blended = black;
-        
-        const int num_colors = color_count_;
-        
-        // Special case: single color - breathe between black and that color
-        if (num_colors == 1) {
-            uint32_t elapsed = time_ms - cycle_start_ms_;
-            // we use half the duration so color to black will
-            // take the same time as color to color below
-            auto d = duration_ * 2;
-            double cycle_position = (double)(elapsed % d) / d;
-            
-            // Full sine wave for smooth breathing (0.0 to 1.0 and back to 0.0)
-            double amplitude = (sin(cycle_position * 2 * PI - PI/2) + 1.0) / 2.0;
-            
-            // Blend between black and the color
-            blended = mix_colors(black, colors_[0], amplitude);
-        }
-        else if (num_colors > 1) {
-            // Calculate total elapsed time to determine which color pair we're breathing between
-            uint32_t total_elapsed = time_ms - cycle_start_ms_;
-            uint32_t total_cycle_duration = duration_ * num_colors;
-            uint32_t position_in_all_cycles = total_elapsed % total_cycle_duration;
-            
-            // Which color transition are we in? (0 = color0->color1, 1 = color1->color2, etc.)
-            int color_index = position_in_all_cycles / duration_;
-            uint32_t elapsed_in_cycle = position_in_all_cycles % duration_;
-            
-            // Position within this specific color transition (0.0 to 1.0)
-            double cycle_position = (double)elapsed_in_cycle / duration_;
-            
-            // Sine wave interpolation (0.0 to 1.0)
-            double amplitude = (sin(cycle_position * PI - PI/2) + 1.0) / 2.0;
-            double blend_factor = amplitude;
-            
-            // Get the two colors to blend between
-            Color color1 = colors_[color_index % num_colors];
-            Color color2 = colors_[(color_index + 1) % num_colors];
-            
-            // Interpolate between the two colors using mix_colors
-            blended = mix_colors(color1, color2, blend_factor);
-        }
-        
-        // Apply the same color to all LEDs
-        for (int i = 0; i < led_count; ++i) {
-            leds[i] = blended;
-        }
-    }
-    
-    // Configuration
-    void set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            brightness_ = clamp(value, 0, 100);
-        } else if (strcmp(name, "duration") == 0) {
-            duration_ = clamp(value, 1000, 10000);
-        }
-    }
-    
-    void set_parameter_colors(const char* name, const Color* colors, int count) override {
-        if (strcmp(name, "colors") == 0 && count > 0) {
-            color_count_ = min(count, 10);
-            memcpy(colors_, colors, color_count_ * sizeof(Color));
-        }
-    }
-    
-    void reset() override {
-        // Reset cycle start time when pattern is activated
-        cycle_start_ms_ = 0;
-    }
-};
-
-// Pattern Registry
-class PatternRegistry {
-private:
-    std::vector<PatternBase*> patterns_;
-    PatternBase* active_pattern_;
-    
-public:
-    PatternRegistry() 
-        : active_pattern_(nullptr) 
-    {
-    }
-    
-    ~PatternRegistry() {
-        // Note: We don't delete patterns - they're owned by caller
-    }
-    
-    // Registration
-    void register_pattern(PatternBase* pattern) {
-        patterns_.push_back(pattern);
-        if (active_pattern_ == nullptr) {
-            active_pattern_ = pattern;
-        }
-    }
-    
-    // Discovery
-    int get_pattern_count() const { return patterns_.size(); }
-    
-    PatternBase* get_pattern(int index) const {
-        if (index >= 0 && index < patterns_.size()) {
-            return patterns_[index];
-        }
-        return nullptr;
-    }
-    
-    PatternBase* get_pattern_by_name(const char* name) const {
-        for (auto* pattern : patterns_) {
-            if (strcmp(pattern->get_name(), name) == 0) {
-                return pattern;
-            }
-        }
-        return nullptr;
-    }
-    
-    // Activation
-    void set_active_pattern(const char* name) {
-        PatternBase* pattern = get_pattern_by_name(name);
-        if (pattern) {
-            if (active_pattern_ != pattern) {
-                active_pattern_ = pattern;
-                active_pattern_->reset();
-            }
-        }
-    }
-    
-    PatternBase* get_active_pattern() const { return active_pattern_; }
-    
-    // JSON serialization for MQTT
-    const char* patterns_to_json() const {
-        static char json_buffer[4096];
-        char* p = json_buffer;
-        
-        p += sprintf(p, "{\"patterns\":[");
-        
-        for (int i = 0; i < patterns_.size(); i++) {
-            if (i > 0) p += sprintf(p, ",");
-            
-            PatternBase* pattern = patterns_[i];
-            p += sprintf(p, "{\"name\":\"%s\",", pattern->get_name());
-            p += sprintf(p, "\"description\":\"%s\",", pattern->get_description());
-            p += sprintf(p, "\"help\":\"%s\",", pattern->get_help());
-            
-            // Global parameters used
-            p += sprintf(p, "\"global_parameters\":[");
-            auto global_params = pattern->get_global_parameters_used();
-            for (int j = 0; j < global_params.size(); j++) {
-                if (j > 0) p += sprintf(p, ",");
-                p += sprintf(p, "\"%s\"", global_params[j]);
-            }
-            p += sprintf(p, "],");
-            
-            // Local parameters
-            p += sprintf(p, "\"local_parameters\":[");
-            auto local_params = pattern->get_local_parameters();
-            for (int j = 0; j < local_params.size(); j++) {
-                if (j > 0) p += sprintf(p, ",");
-                
-                const auto& param = local_params[j];
-                p += sprintf(p, "{");
-                p += sprintf(p, "\"name\":\"%s\",", param.name);
-                
-                // Type mapping
-                const char* type_str = "unknown";
-                switch (param.type) {
-                    case ParameterType::PERCENTAGE: type_str = "percentage"; break;
-                    case ParameterType::NUMBER: type_str = "number"; break;
-                    case ParameterType::COLORS: type_str = "colors"; break;
-                    case ParameterType::MOVEMENT: type_str = "movement"; break;
-                    case ParameterType::DURATION: type_str = "duration"; break;
-                }
-                p += sprintf(p, "\"type\":\"%s\",", type_str);
-                p += sprintf(p, "\"description\":\"%s\"", param.description);
-                
-                // Optional fields
-                if (param.type != ParameterType::COLORS) {
-                    p += sprintf(p, ",\"default\":%d", param.default_value);
-                    p += sprintf(p, ",\"min\":%d", param.min_value);
-                    p += sprintf(p, ",\"max\":%d", param.max_value);
-                }
-                if (param.unit) {
-                    p += sprintf(p, ",\"unit\":\"%s\"", param.unit);
-                }
-                if (param.scale) {
-                    p += sprintf(p, ",\"scale\":\"%s\"", param.scale);
-                }
-                
-                p += sprintf(p, "}");
-            }
-            
-            p += sprintf(p, "]}");
-        }
-        
-        p += sprintf(p, "]}");
-        
-        return json_buffer;
-    }
-};
-
-// Global pattern instances (will be initialized in setup())
-SolidPattern solid_pattern;
-BreathePattern breathe_pattern;
-PatternRegistry pattern_registry;
-
-// Pattern system console commands
 void cmd_pattern_list(CommandEnvironment &env) {
     env.cout.println("Available patterns:");
     for (int i = 0; i < pattern_registry.get_pattern_count(); i++) {
