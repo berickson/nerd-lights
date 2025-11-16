@@ -3034,7 +3034,7 @@ void cmd_pattern_discover(CommandEnvironment &env) {
         char c = json[i];
         
         // Track string state (ignore escaped quotes)
-        if (c == '\"' && (i == 0 || json[i-1] != '\\\\')) {
+        if (c == '\"' && (i == 0 || json[i-1] != '\\')) {
             in_string = !in_string;
         }
         
@@ -3251,7 +3251,7 @@ void cmd_pattern_reset(CommandEnvironment &env) {
     active->reset();
     
     // Reset global colors to warm white
-    global_colors[0] = CRGB(0xFF, 0xA5, 0x00);
+    global_colors[0] = Color(0xFF, 0xA5, 0x00);
     global_color_count = 1;
     
     env.cout.println("Pattern reset to defaults: warm white (#FFA500)");
