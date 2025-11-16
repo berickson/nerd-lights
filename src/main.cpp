@@ -337,6 +337,9 @@ public:
     // Returns nullptr on success, error message on failure
     virtual const char* set_parameter_int(const char* name, int value) { return nullptr; }
     
+    // Get current value of a parameter (returns 0 if not found)
+    virtual int get_parameter_int(const char* name) const { return 0; }
+    
     virtual void reset() {}
 };
 
@@ -408,6 +411,12 @@ public:
             spacing_ = value;
         }
         return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "spacing") == 0) return spacing_;
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
     }
     
     void reset() override {
@@ -498,6 +507,12 @@ public:
             duration_ = value;
         }
         return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "duration") == 0) return duration_;
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
     }
     
     void reset() override {
@@ -3149,7 +3164,7 @@ void cmd_pattern_param(CommandEnvironment &env) {
         // Show local parameters
         auto local_params = active->get_local_parameters();
         for (const auto& p : local_params) {
-            env.cout.printf("  %s: %d\n", p.name, p.value);
+            env.cout.printf("  %s: %d\n", p.name, active->get_parameter_int(p.name));
         }
         
         env.cout.println("\nUsage: pattern_param <parameter_name> <value>");
