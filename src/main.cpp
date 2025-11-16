@@ -110,6 +110,15 @@ const unsigned long retained_message_timeout = 5000; // 5 seconds
 // Forward declarations
 void set_program(JsonDocument & doc);
 
+// Pattern system forward declarations
+class PatternBase;
+class SolidPattern;
+class BreathePattern;
+class PatternRegistry;
+extern SolidPattern solid_pattern;
+extern BreathePattern breathe_pattern;
+extern PatternRegistry pattern_registry;
+
 //#define use_fastled
 #if defined(use_fastled)
 #include <FastLED.h>
