@@ -3175,11 +3175,6 @@ void cmd_pattern_param(CommandEnvironment &env) {
         return;
     }
     
-    if (env.args.getParamCount() < 2) {
-        env.cerr.println("Usage: pattern_param <parameter_name> <value>");
-        return;
-    }
-    
     const char* param_name = env.args.getCmdParam(1);
     
     // Validate parameter name
@@ -3197,6 +3192,21 @@ void cmd_pattern_param(CommandEnvironment &env) {
         auto local_params = active->get_local_parameters();
         for (const auto& p : local_params) {
             env.cerr.printf("  %s (local)\n", p.name);
+        }
+        return;
+    }
+    
+    // Query mode for single parameter - show just that parameter's value
+    if (env.args.getParamCount() < 2) {
+        if (strcmp(param_name, "colors") == 0) {
+            env.cout.printf("colors: ");
+            for (int i = 0; i < global_color_count; i++) {
+                if (i > 0) env.cout.print(", ");
+                env.cout.printf("#%02X%02X%02X", global_colors[i].r, global_colors[i].g, global_colors[i].b);
+            }
+            env.cout.println();
+        } else {
+            env.cout.printf("%s: %d\n", param_name, active->get_parameter_int(param_name));
         }
         return;
     }
