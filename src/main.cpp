@@ -118,6 +118,7 @@ void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
 void init_pattern_system();
 void publish_pattern_definitions();
+void render_with_pattern_system();
 
 // Pattern system forward declarations (actual classes defined later)
 class PatternBase;
@@ -2532,20 +2533,14 @@ Below stuff would be good for a config page
           break;
         case mode_breathe:
           if (use_patterns) {
-            PatternBase* active = pattern_registry.get_active_pattern();
-            if (active) {
-              active->render(&leds[0], led_count, clock_millis());
-            }
+            render_with_pattern_system();
           } else {
             breathe();
           }
           break;
         case mode_solid:
           if (use_patterns) {
-            PatternBase* active = pattern_registry.get_active_pattern();
-            if (active) {
-              active->render(&leds[0], led_count, clock_millis());
-            }
+            render_with_pattern_system();
           } else {
             solid(current_colors);
           }
@@ -3080,6 +3075,15 @@ void cmd_pattern_set(CommandEnvironment &env) {
         env.cout.printf("Activated pattern: %s\n", pattern_name);
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
+    }
+}
+
+// Helper function to render using pattern system - called from loop()
+// Defined here after pattern classes so it can call their methods
+void render_with_pattern_system() {
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (active) {
+        active->render(&leds[0], led_count, clock_millis());
     }
 }
 
