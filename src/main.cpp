@@ -1396,6 +1396,82 @@ const uint8_t gamma8[] = {
   177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
   215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
+// Pattern system console commands
+void cmd_pattern_list(CommandEnvironment &env) {
+    env.cout.println("Available patterns:");
+    for (int i = 0; i < pattern_registry.get_pattern_count(); i++) {
+        PatternBase* p = pattern_registry.get_pattern(i);
+        env.cout.printf("  %s - %s\n", p->get_name(), p->get_description());
+    }
+}
+
+void cmd_pattern_info(CommandEnvironment &env) {
+    const char* pattern_name = nullptr;
+    if (env.args.getParamCount() >= 1) {
+        pattern_name = env.args.getCmdParam(1);
+    }
+    
+    PatternBase* pattern = nullptr;
+    if (pattern_name) {
+        pattern = pattern_registry.get_pattern_by_name(pattern_name);
+    } else {
+        pattern = pattern_registry.get_active_pattern();
+    }
+    
+    if (pattern) {
+        env.cout.printf("Pattern: %s\n", pattern->get_name());
+        env.cout.printf("Description: %s\n", pattern->get_description());
+        env.cout.printf("Help: %s\n", pattern->get_help());
+        
+        // Show global parameters used
+        auto global_params = pattern->get_global_parameters_used();
+        if (global_params.size() > 0) {
+            env.cout.print("Global parameters: ");
+            for (int i = 0; i < global_params.size(); i++) {
+                if (i > 0) env.cout.print(", ");
+                env.cout.print(global_params[i]);
+            }
+            env.cout.println();
+        }
+        
+        // Show local parameters
+        auto local_params = pattern->get_local_parameters();
+        if (local_params.size() > 0) {
+            env.cout.println("Local parameters:");
+            for (const auto& param : local_params) {
+                env.cout.printf("  %s (%s): %s\n", 
+                    param.name, 
+                    param.unit ? param.unit : "n/a",
+                    param.description);
+            }
+        }
+    } else {
+        env.cerr.printf("Pattern not found: %s\n", pattern_name);
+    }
+}
+
+void cmd_pattern_discover(CommandEnvironment &env) {
+    // Output JSON definitions for testing
+    env.cout.println(pattern_registry.patterns_to_json());
+}
+
+void cmd_pattern_set(CommandEnvironment &env) {
+    if (env.args.getParamCount() < 1) {
+        env.cerr.println("Usage: pattern_set <pattern_name>");
+        return;
+    }
+    
+    const char* pattern_name = env.args.getCmdParam(1);
+    PatternBase* pattern = pattern_registry.get_pattern_by_name(pattern_name);
+    
+    if (pattern) {
+        pattern_registry.set_active_pattern(pattern_name);
+        env.cout.printf("Activated pattern: %s\n", pattern_name);
+    } else {
+        env.cerr.printf("Unknown pattern: %s\n", pattern_name);
+    }
+}
+
 void setup() {
   Serial.begin(921600);
   Serial.println();
@@ -1532,6 +1608,22 @@ void setup() {
     Command("get_nearby_devices", cmd_get_nearby_devices, "use network discover to find nearby Nerd Lights"));
   commands.emplace_back(
     Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected)"));
+
+  // Pattern system commands
+  commands.emplace_back(
+    Command("pattern_list", cmd_pattern_list, "List available patterns"));
+  commands.emplace_back(
+    Command("pattern_info", cmd_pattern_info, "Show pattern information [pattern_name]"));
+  commands.emplace_back(
+    Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
+  commands.emplace_back(
+    Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
+
+  // Initialize pattern registry
+  pattern_registry.register_pattern(&solid_pattern);
+  pattern_registry.register_pattern(&breathe_pattern);
+  pattern_registry.set_active_pattern("Solid");
+  Serial.println("Pattern registry initialized");
 
 
 #if not defined(use_fastled)
