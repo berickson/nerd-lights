@@ -109,6 +109,18 @@ const unsigned long retained_message_timeout = 5000; // 5 seconds
 
 // Forward declarations
 void set_program(JsonDocument & doc);
+void cmd_pattern_list(CommandEnvironment &env);
+void cmd_pattern_info(CommandEnvironment &env);
+void cmd_pattern_discover(CommandEnvironment &env);
+void cmd_pattern_set(CommandEnvironment &env);
+
+// Pattern system forward declarations
+class SolidPattern;
+class BreathePattern;
+class PatternRegistry;
+extern SolidPattern solid_pattern;
+extern BreathePattern breathe_pattern;
+extern PatternRegistry pattern_registry;
 
 //#define use_fastled
 #if defined(use_fastled)
