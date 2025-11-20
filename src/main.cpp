@@ -1336,6 +1336,93 @@ void add_color(Color color) {
 }
 
 void set_program(JsonDocument & doc) {
+  // Check for new pattern mode format
+  auto mode = doc["mode"];
+  if (mode.is<const char *>() && strcmp(mode.as<const char *>(), "pattern") == 0) {
+    // New pattern system format
+    Serial.println("Activating pattern system mode");
+    use_patterns = true;
+    
+    // Get pattern name
+    auto pattern_name = doc["pattern_name"];
+    if (pattern_name.is<const char *>()) {
+      const char* name = pattern_name.as<const char *>();
+      Serial.printf("Setting pattern: %s\n", name);
+      
+      // Activate the pattern
+      PatternBase* pattern = pattern_registry.get_pattern_by_name_case_insensitive(name);
+      if (pattern) {
+        pattern_registry.set_active_pattern(pattern->get_name());
+        
+        // Set corresponding light mode for the pattern
+        if (strcmp(pattern->get_name(), "Solid") == 0) {
+          set_light_mode(mode_solid);
+        } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
+          set_light_mode(mode_breathe);
+        }
+        
+        // Apply parameters if provided
+        auto parameters = doc["parameters"];
+        if (!parameters.isNull()) {
+          // Handle brightness
+          auto brightness = parameters["brightness"];
+          if (brightness.is<int>()) {
+            int value = brightness.as<int>();
+            pattern->set_parameter_int("brightness", value);
+            Serial.printf("Set brightness = %d\n", value);
+          }
+          
+          // Handle colors (array of hex strings)
+          auto colors = parameters["colors"].as<JsonArray>();
+          if (!colors.isNull() && colors.size() > 0) {
+            global_color_count = 0;
+            for (JsonVariant color_variant : colors) {
+              if (color_variant.is<const char *>() && global_color_count < 10) {
+                const char* hex = color_variant.as<const char *>();
+                if (hex[0] == '#' && strlen(hex) >= 7) {
+                  unsigned int r, g, b;
+                  if (sscanf(hex + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+                    global_colors[global_color_count].r = r;
+                    global_colors[global_color_count].g = g;
+                    global_colors[global_color_count].b = b;
+                    global_color_count++;
+                  }
+                }
+              }
+            }
+            Serial.printf("Set %d colors\n", global_color_count);
+          }
+          
+          // Handle pattern-specific parameters
+          // Duration (for Breathe)
+          auto duration = parameters["duration"];
+          if (duration.is<int>()) {
+            int value = duration.as<int>();
+            pattern->set_parameter_int("duration", value);
+            Serial.printf("Set duration = %d\n", value);
+          }
+          
+          // Spacing (for Solid)
+          auto spacing = parameters["spacing"];
+          if (spacing.is<int>()) {
+            int value = spacing.as<int>();
+            pattern->set_parameter_int("spacing", value);
+            Serial.printf("Set spacing = %d\n", value);
+          }
+        }
+        
+        turn_on();
+        Serial.printf("Pattern activated: %s\n", pattern->get_name());
+      } else {
+        Serial.printf("ERROR: Unknown pattern: %s\n", name);
+      }
+    }
+    return;
+  }
+  
+  // Legacy program format - disable pattern system
+  use_patterns = false;
+  
   auto new_light_mode = doc["light_mode"];
   if(new_light_mode.is<int>()) {
     set_light_mode((LightMode)new_light_mode.as<int>());
