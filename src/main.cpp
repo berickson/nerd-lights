@@ -816,7 +816,8 @@ public:
             auto ms_peak = led.done_ms - twinkle_ms/2.;
             auto from_peak = abs((int)(ms-ms_peak));
             auto level = 1. - from_peak / (twinkle_ms/2);
-            Color color = color_at_brightness(led.twinkle_color, brightness_ * level / 100.0 * 255);
+            
+            uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
             leds[led.led_number] = color;
         }
     }
