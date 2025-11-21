@@ -110,6 +110,10 @@ const unsigned long retained_message_timeout = 5000; // 5 seconds
 // Pattern system control flag
 bool use_patterns = false;  // When true, use pattern system; when false, use legacy rendering
 
+// Pattern setpoint storage (for echoing back in actuals)
+String last_pattern_name = "";
+StaticJsonDocument<2000> last_pattern_parameters;
+
 // Global pattern system state (shared across all patterns)
 Color global_colors[10] = {{0xFF, 0xA5, 0x00}}; // Default: warm orange
 int global_color_count = 1;
@@ -837,20 +841,32 @@ void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
 
 void get_program_json(ArduinoJson::JsonObject & program)
 {
-  program["light_mode"] = light_mode_name(light_mode);
-  program["brightness"] = brightness;
-  program["saturation"] = saturation;
-  program["cycles"] = cycles;
-  program["speed"] = speed;
+  if (use_patterns && last_pattern_name.length() > 0) {
+    // Pattern mode - output pattern format
+    program["mode"] = "pattern";
+    program["pattern_name"] = last_pattern_name;
+    
+    // Echo back parameters (deep copy)
+    if (!last_pattern_parameters.isNull()) {
+      program["parameters"] = last_pattern_parameters.as<JsonObject>();
+    }
+  } else {
+    // Legacy mode - output legacy format
+    program["light_mode"] = light_mode_name(light_mode);
+    program["brightness"] = brightness;
+    program["saturation"] = saturation;
+    program["cycles"] = cycles;
+    program["speed"] = speed;
 
-  JsonArray colors_array = program.createNestedArray("colors");
-  for (int i = 0; i < unscaled_colors.size(); ++i)
-  {
-    Color c = unscaled_colors[i];
-    auto color_json = colors_array.createNestedObject();
-    color_json["r"] = c.r;
-    color_json["g"] = c.g;
-    color_json["b"] = c.b;
+    JsonArray colors_array = program.createNestedArray("colors");
+    for (int i = 0; i < unscaled_colors.size(); ++i)
+    {
+      Color c = unscaled_colors[i];
+      auto color_json = colors_array.createNestedObject();
+      color_json["r"] = c.r;
+      color_json["g"] = c.g;
+      color_json["b"] = c.b;
+    }
   }
 }
 
@@ -1349,6 +1365,16 @@ void set_program(JsonDocument & doc) {
       const char* name = pattern_name.as<const char *>();
       Serial.printf("Setting pattern: %s\n", name);
       
+      // Store pattern name for actuals
+      last_pattern_name = String(name);
+      
+      // Store parameters for actuals (deep copy)
+      last_pattern_parameters.clear();
+      auto parameters = doc["parameters"];
+      if (!parameters.isNull()) {
+        last_pattern_parameters.set(parameters);
+      }
+      
       // Activate the pattern
       PatternBase* pattern = pattern_registry.get_pattern_by_name_case_insensitive(name);
       if (pattern) {
@@ -1422,6 +1448,8 @@ void set_program(JsonDocument & doc) {
   
   // Legacy program format - disable pattern system
   use_patterns = false;
+  last_pattern_name = "";
+  last_pattern_parameters.clear();
   
   auto new_light_mode = doc["light_mode"];
   if(new_light_mode.is<int>()) {
