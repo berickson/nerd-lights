@@ -2824,7 +2824,7 @@ void setup() {
     }
   );
 
-  mqtt.setBufferSize(3000);
+  mqtt.setBufferSize(4096);
   mqtt.setServer("nerdlights.net", 1883);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
