@@ -1080,7 +1080,7 @@ public:
             }
             Color color_a = global_colors[division-1];
             float percent = 1-(i-division_start)/(division_end-division_start);
-            float part_a = gamma_percent(percent);
+            float part_a = gamma_percent(percent, 2.8);
             
             float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
             Color color(color_a.r * part_a * gamma_brightness, 
