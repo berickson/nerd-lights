@@ -526,6 +526,206 @@ public:
     }
 };
 
+class GradientPattern : public PatternBase {
+private:
+    int brightness_;
+
+public:
+    GradientPattern() : brightness_(100) {}
+    
+    const char* get_name() const override { return "Gradient"; }
+    const char* get_description() const override {
+        return "Smooth color gradient transitions across the strand";
+    }
+    const char* get_help() const override {
+        return "Creates a smooth gradient between your selected colors. "
+               "Multiple colors will blend smoothly across the entire strand.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        // Legacy gradient implementation
+        size_t n_colors = global_color_count;
+        float stretch = n_colors < 2 ? 1.0 : (float)(n_colors-1) / (n_colors);
+        double shift_left = 0;  // No animation for now
+        RepeatingPattern p(led_count, n_colors, stretch, shift_left);
+        
+        float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
+        
+        for(int i = 0; i<led_count; ++i) {
+            auto r = p.segment_percent(i);
+            if(r.segment >= n_colors) {
+                r.segment = n_colors - 1;
+            }
+            Color color_a = global_colors[r.segment];
+            Color color_b = global_colors[(r.segment+1)%n_colors];
+            Color color = mix_colors(color_a, color_b, r.percent);
+            leds[i] = Color(
+                (uint8_t)(color.r * gamma_brightness),
+                (uint8_t)(color.g * gamma_brightness),
+                (uint8_t)(color.b * gamma_brightness)
+            );
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+    }
+};
+
+class ConfettiPattern : public PatternBase {
+private:
+    int brightness_;
+
+public:
+    ConfettiPattern() : brightness_(100) {}
+    
+    const char* get_name() const override { return "Confetti"; }
+    const char* get_description() const override {
+        return "Random sparkles fade in and out creating a confetti effect";
+    }
+    const char* get_help() const override {
+        return "Creates random colored sparkles that fade naturally. "
+               "Uses all your selected colors randomly distributed across the strand.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        // Legacy confetti implementation
+        for(int i=0; i<led_count; ++i) {
+            // fade the led
+            leds[i].r *= 0.95;
+            leds[i].g *= 0.95;
+            leds[i].b *= 0.95;
+
+            // randomly set a color
+            if( rand() % 15 == 0 ) {
+                Color c1 = leds[i];
+                Color c2 = global_colors[rand()%global_color_count];
+                Color c3;
+                c3.r = qadd8(c1.r,c2.r);
+                c3.g = qadd8(c1.g,c2.g);
+                c3.b = qadd8(c1.b,c2.b);
+                leds[i] = c3;
+            }
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+    }
+};
+
+class FlickerPattern : public PatternBase {
+private:
+    int brightness_;
+
+public:
+    FlickerPattern() : brightness_(100) {}
+    
+    const char* get_name() const override { return "Flicker"; }
+    const char* get_description() const override {
+        return "Candle-like flickering effect";
+    }
+    const char* get_help() const override {
+        return "Simulates flickering candles or firelight. "
+               "Colors will randomly flicker at different intensities.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        // Legacy flicker implementation
+        for (int i = 0; i < led_count; ++i) {
+            if(rand()%5==0) {
+                int r = 0;
+                int g = 0;
+                int b = 0;
+                for(int c = 0; c < global_color_count; c++) {
+                    Color color = global_colors[c];
+                    auto level =random(50,100);
+                    r += color.r * level;
+                    g += color.g * level;
+                    b += color.b * level;
+                }
+                r /= 100*global_color_count;
+                g /= 100*global_color_count;
+                b /= 100*global_color_count;
+                leds[i]=Color(r,g,b);
+            }
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+    }
+};
+
 class PatternRegistry {
 private:
     std::vector<PatternBase*> patterns_;
@@ -650,6 +850,9 @@ public:
 // Global pattern instances
 SolidPattern solid_pattern;
 BreathePattern breathe_pattern;
+GradientPattern gradient_pattern;
+ConfettiPattern confetti_pattern;
+FlickerPattern flicker_pattern;
 PatternRegistry pattern_registry;
 
 
@@ -3419,6 +3622,9 @@ void render_with_pattern_system() {
 void init_pattern_system() {
     pattern_registry.register_pattern(&solid_pattern);
     pattern_registry.register_pattern(&breathe_pattern);
+    pattern_registry.register_pattern(&gradient_pattern);
+    pattern_registry.register_pattern(&confetti_pattern);
+    pattern_registry.register_pattern(&flicker_pattern);
     pattern_registry.set_active_pattern("Solid");
     Serial.println("Pattern registry initialized");
 }
