@@ -726,6 +726,471 @@ public:
     }
 };
 
+class TwinklePattern : public PatternBase {
+private:
+    int brightness_;
+    struct blinking_led_t {
+        uint16_t led_number;
+        uint32_t done_ms;
+        uint32_t twinkle_color;
+    };
+    static blinking_led_t arr[100];
+    nonstd::ring_span<blinking_led_t> blinking_leds_;
+    uint32_t next_ms_;
+
+public:
+    TwinklePattern() 
+        : brightness_(100), 
+          blinking_leds_(arr, arr + 100, arr, 0),
+          next_ms_(0) {}
+    
+    const char* get_name() const override { return "Twinkle"; }
+    const char* get_description() const override {
+        return "Random twinkling stars effect";
+    }
+    const char* get_help() const override {
+        return "Creates a sparkling starfield effect with colors randomly twinkling. "
+               "About 10% of LEDs twinkle at any given time.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        // Legacy twinkle implementation
+        uint32_t ms = time_ms;
+        
+        if(ms - next_ms_ > 1000) {
+            next_ms_ = ms;
+        }
+        
+        float ratio_twinkling = .1;
+        uint32_t average_twinkling_count = led_count * ratio_twinkling;
+        uint32_t max_twinkling_count = 100;
+        uint16_t twinkle_ms = 1000;
+        float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
+        
+        bool multi = global_color_count >= 2;
+        uint32_t base_color = multi ? global_colors[0] : black;
+        
+        for(int i = 0; i < led_count; ++i) {
+            leds[i] = base_color;
+        }
+        
+        while(blinking_leds_.size() > 0 && blinking_leds_.front().done_ms <= ms) {
+            blinking_leds_.pop_front();
+        }
+        
+        while(next_ms_ <= ms) {
+            if(blinking_leds_.size() < max_twinkling_count) {
+                blinking_led_t led;
+                led.done_ms = ms+twinkle_ms;
+                led.led_number = rand() % led_count;
+                led.twinkle_color = multi ? global_colors[rand()% (global_color_count-1)+1] : global_colors[0];
+                bool already_blinking = false;
+                for(auto blinking : blinking_leds_) {
+                    if(blinking.led_number == led.led_number) {
+                        already_blinking = true;
+                    }
+                }
+                if(!already_blinking) {
+                    blinking_leds_.push_back(led);
+                }
+            }
+            double add_ms = frand() * 2 * average_ms_per_new_twinkle;
+            next_ms_ = next_ms_ + add_ms;
+        }
+        
+        for(auto & led : blinking_leds_) {
+            auto ms_peak = led.done_ms - twinkle_ms/2.;
+            auto from_peak = abs((int)(ms-ms_peak));
+            auto level = 1. - from_peak / (twinkle_ms/2);
+            Color color = color_at_brightness(led.twinkle_color, brightness_ * level / 100.0 * 255);
+            leds[led.led_number] = color;
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+        next_ms_ = 0;
+        blinking_leds_ = nonstd::ring_span<blinking_led_t>(arr, arr + 100, arr, 0);
+    }
+};
+
+TwinklePattern::blinking_led_t TwinklePattern::arr[100];
+
+class ExplosionPattern : public PatternBase {
+private:
+    int brightness_;
+    struct explosion_t {
+        int16_t center_led_number;
+        int32_t start_ms;
+        int32_t explosion_color;
+        int8_t max_radius_in_leds;
+    };
+    static explosion_t arr[100];
+    nonstd::ring_span<explosion_t> explosions_;
+    uint32_t next_ms_;
+
+public:
+    ExplosionPattern() 
+        : brightness_(100),
+          explosions_(arr, arr + 100, arr, 0),
+          next_ms_(0) {}
+    
+    const char* get_name() const override { return "Explosion"; }
+    const char* get_description() const override {
+        return "Expanding colored explosions appear randomly";
+    }
+    const char* get_help() const override {
+        return "Creates bursts of color that expand outward from random points. "
+               "Multiple explosions can overlap creating interesting effects.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        uint32_t ms = time_ms;
+        
+        if(ms - next_ms_ > 1000) {
+            next_ms_ = ms;
+        }
+        
+        const int32_t explosion_ms = 1000;
+        float ratio_exploding = .1;
+        uint32_t average_explosion_count = led_count * ratio_exploding;
+        uint32_t max_explosion_count = 100;
+        float average_ms_per_new_explosion = (float)explosion_ms / average_explosion_count;
+        
+        bool multi = global_color_count >= 2;
+        Color base_color = multi ? global_colors[0] : black;
+        
+        for(int i = 0; i < led_count; ++i) {
+            leds[i]=base_color;
+        }
+        
+        while(explosions_.size() > 0 && ms - explosions_.front().start_ms > explosion_ms) {
+            explosions_.pop_front();
+        }
+        
+        while(next_ms_ <= ms) {
+            if(explosions_.size() < max_explosion_count) {
+                explosion_t explosion;
+                explosion.center_led_number = rand() % led_count;
+                explosion.start_ms = ms;
+                explosion.explosion_color = global_colors[rand()%global_color_count];
+                explosion.max_radius_in_leds = 5 + rand() % 10;
+                explosions_.push_back(explosion);
+            }
+            double add_ms = frand() * 2 * average_ms_per_new_explosion;
+            next_ms_ = next_ms_ + add_ms;
+        }
+        
+        for(auto & explosion : explosions_) {
+            Color color = color_at_brightness(explosion.explosion_color, brightness_);
+            for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
+                auto distance = abs(x);
+                int i = explosion.center_led_number + x;
+                uint32_t elapsed_ms = ms - explosion.start_ms;
+                uint16_t radius_in_leds = (uint64_t)explosion.max_radius_in_leds * elapsed_ms / explosion_ms;
+                float percent = (float)(explosion.max_radius_in_leds - radius_in_leds) *
+                              (explosion.max_radius_in_leds - radius_in_leds) /
+                              (explosion.max_radius_in_leds * explosion.max_radius_in_leds);
+                if(i>0 && i<led_count) {
+                    if (abs(distance - radius_in_leds) < 2) {
+                        leds[i] = mix_colors(leds[i], color, percent);
+                    }
+                }
+            }
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+        next_ms_ = 0;
+        explosions_ = nonstd::ring_span<explosion_t>(arr, arr + 100, arr, 0);
+    }
+};
+
+ExplosionPattern::explosion_t ExplosionPattern::arr[100];
+
+class StrobePattern : public PatternBase {
+private:
+    int brightness_;
+    int rate_;
+
+public:
+    StrobePattern() : brightness_(100), rate_(10) {}
+    
+    const char* get_name() const override { return "Strobe"; }
+    const char* get_description() const override {
+        return "Strobe light effect flashing between colors";
+    }
+    const char* get_help() const override {
+        return "Creates a strobe light effect. With one color, alternates between on and off. "
+               "With multiple colors, cycles through them rapidly.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        ParameterDef rate;
+        rate.name = "rate";
+        rate.type = ParameterType::NUMBER;
+        rate.description = "Strobe flash speed";
+        rate.default_value = 10;
+        rate.min_value = 1;
+        rate.max_value = 50;
+        rate.unit = "";
+        rate.scale = "linear";
+        return {rate};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        float speed = rate_ / 10.0f;
+        bool multi = global_color_count >= 2;
+        int n = floor((time_ms * (double)speed) / 1000.0);
+        
+        uint32_t color = Color(0,0,0);
+        if(multi) {
+            color = global_colors[n%global_color_count];
+        } else {
+            color = (n%2==0)?black:global_colors[0];
+        }
+        
+        for (int i = 0; i < led_count; ++i) {
+            leds[i]=color;
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        } else if (strcmp(name, "rate") == 0) {
+            if (value < 1 || value > 50) {
+                return "Rate must be 1-50";
+            }
+            rate_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        if (strcmp(name, "rate") == 0) return rate_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+        rate_ = 10;
+    }
+};
+
+class MeteorPattern : public PatternBase {
+private:
+    int brightness_;
+
+public:
+    MeteorPattern() : brightness_(100) {}
+    
+    const char* get_name() const override { return "Meteor"; }
+    const char* get_description() const override {
+        return "Meteor tails streak across the strand";
+    }
+    const char* get_help() const override {
+        return "Creates meteor/comet tails that fade from bright to dark. "
+               "Each color gets its own section with a trailing fade effect.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        size_t n_colors = global_color_count;
+        int divisions = n_colors;
+        int division = 1;
+        double division_start = 0;
+        double percent = (double)division/divisions;
+        double division_end = led_count * percent;
+        
+        for(int i = 0; i<led_count; ++i) {
+            if(i>division_end) {
+                ++division;
+                division_start = division_end;
+                percent = (double)division/divisions;
+                division_end = led_count * percent;
+            }
+            Color color_a = global_colors[division-1];
+            float percent = 1-(i-division_start)/(division_end-division_start);
+            float part_a = gamma_percent(percent);
+            
+            float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
+            Color color(color_a.r * part_a * gamma_brightness, 
+                       color_a.g * part_a * gamma_brightness, 
+                       color_a.b * part_a * gamma_brightness);
+            leds[i]=color;
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+    }
+};
+
+class Pattern1 : public PatternBase {
+private:
+    int brightness_;
+
+public:
+    Pattern1() : brightness_(100) {}
+    
+    const char* get_name() const override { return "Pattern1"; }
+    const char* get_description() const override {
+        return "Multi-speed chase effect with color mixing";
+    }
+    const char* get_help() const override {
+        return "Up to 6 colors chase at different speeds and mix where they overlap. "
+               "Creates complex, dynamic patterns with color blending.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        return {};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        auto ms = time_ms;
+        for (int i = 0; i < led_count; i++) {
+            Color c = global_colors[0];
+            int r = c.r;
+            int g = c.g;
+            int b = c.b;
+            
+            if (global_color_count >= 2 && (ms / 1000) % led_count == i) {
+                c = global_colors[1];
+                r += c.r; g += c.g; b += c.b;
+            }
+            if (global_color_count >= 3 && (ms / 20) % led_count == i) {
+                c = global_colors[2];
+                r += c.r; g += c.g; b += c.b;
+            }
+            if (global_color_count >= 4 && (ms / 30) % led_count == i) {
+                c = global_colors[3];
+                r += c.r; g += c.g; b += c.b;
+            }
+            if (global_color_count >= 5 && (ms / 40) % led_count == i) {
+                c = global_colors[4];
+                r += c.r; g += c.g; b += c.b;
+            }
+            if (global_color_count >= 6 && (ms / 35) % led_count == led_count - i) {
+                c = global_colors[5];
+                r += c.r; g += c.g; b += c.b;
+            }
+            
+            int max_c = max(r,max(g,b));
+            if(max_c > 255) {
+                c.r = r * 255. / max_c;
+                c.g = g * 255. / max_c;
+                c.b = b * 255. / max_c;
+            } else {
+                c.r = r;
+                c.g = g;
+                c.b = b;
+            }
+            leds[i]=c;
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "brightness") == 0) {
+            if (value < 0 || value > 100) {
+                return "Brightness must be 0-100";
+            }
+            brightness_ = value;
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "brightness") == 0) return brightness_;
+        return 0;
+    }
+    
+    void reset() override {
+        brightness_ = 100;
+    }
+};
+
 class PatternRegistry {
 private:
     std::vector<PatternBase*> patterns_;
@@ -853,6 +1318,11 @@ BreathePattern breathe_pattern;
 GradientPattern gradient_pattern;
 ConfettiPattern confetti_pattern;
 FlickerPattern flicker_pattern;
+TwinklePattern twinkle_pattern;
+ExplosionPattern explosion_pattern;
+StrobePattern strobe_pattern;
+MeteorPattern meteor_pattern;
+Pattern1 pattern1;
 PatternRegistry pattern_registry;
 
 
@@ -3625,6 +4095,11 @@ void init_pattern_system() {
     pattern_registry.register_pattern(&gradient_pattern);
     pattern_registry.register_pattern(&confetti_pattern);
     pattern_registry.register_pattern(&flicker_pattern);
+    pattern_registry.register_pattern(&twinkle_pattern);
+    pattern_registry.register_pattern(&explosion_pattern);
+    pattern_registry.register_pattern(&strobe_pattern);
+    pattern_registry.register_pattern(&meteor_pattern);
+    pattern_registry.register_pattern(&pattern1);
     pattern_registry.set_active_pattern("Solid");
     Serial.println("Pattern registry initialized");
 }
