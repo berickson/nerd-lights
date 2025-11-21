@@ -298,7 +298,7 @@ const char * light_mode_name(LightMode mode) {
 
 // Forward declarations for functions needed by patterns
 extern const Color black;
-float gamma_percent(float percent, float gamma = 2.8);
+float gamma_percent(float percent, float gamma);
 Color color_at_brightness(Color color, uint8_t new_brightness);
 inline uint8_t mul_div(uint8_t number, uint32_t numerator, uint32_t denominator);
 
