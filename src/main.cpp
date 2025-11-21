@@ -296,6 +296,24 @@ const char * light_mode_name(LightMode mode) {
 // These come early so command functions can call their methods
 ////////////////////////////////////////////
 
+// Forward declarations and helper functions needed by patterns
+const Color black = {0,0,0};
+
+float gamma_percent(float percent, float gamma = 2.8) {
+  return powf(percent, gamma);
+}
+
+Color color_at_brightness(Color color, uint8_t new_brightness) {
+  Color c = color;
+  uint32_t max_c = max<uint8_t>(max<uint8_t>(c.r,c.g),c.b);
+  if(max_c > 0) {
+    c.r = mul_div(c.r, new_brightness, max_c);
+    c.g = mul_div(c.g, new_brightness, max_c);
+    c.b = mul_div(c.b, new_brightness, max_c);
+  }
+  return c;
+}
+
 // Parameter types for pattern configuration
 enum class ParameterType {
     PERCENTAGE,
@@ -1104,14 +1122,14 @@ public:
     }
 };
 
-class Pattern1 : public PatternBase {
+class ChasePattern : public PatternBase {
 private:
     int brightness_;
 
 public:
-    Pattern1() : brightness_(100) {}
+    ChasePattern() : brightness_(100) {}
     
-    const char* get_name() const override { return "Pattern1"; }
+    const char* get_name() const override { return "Chase"; }
     const char* get_description() const override {
         return "Multi-speed chase effect with color mixing";
     }
@@ -1322,7 +1340,7 @@ TwinklePattern twinkle_pattern;
 ExplosionPattern explosion_pattern;
 StrobePattern strobe_pattern;
 MeteorPattern meteor_pattern;
-Pattern1 pattern1;
+ChasePattern chase_pattern;
 PatternRegistry pattern_registry;
 
 
@@ -4099,7 +4117,7 @@ void init_pattern_system() {
     pattern_registry.register_pattern(&explosion_pattern);
     pattern_registry.register_pattern(&strobe_pattern);
     pattern_registry.register_pattern(&meteor_pattern);
-    pattern_registry.register_pattern(&pattern1);
+    pattern_registry.register_pattern(&chase_pattern);
     pattern_registry.set_active_pattern("Solid");
     Serial.println("Pattern registry initialized");
 }
