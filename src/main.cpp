@@ -742,7 +742,7 @@ private:
     };
     static blinking_led_t arr[100];
     nonstd::ring_span<blinking_led_t> blinking_leds_;
-    uint32_t next_ms_;
+    double next_ms_;
 
 public:
     TwinklePattern() 
@@ -813,9 +813,9 @@ public:
         }
         
         for(auto & led : blinking_leds_) {
-            auto ms_peak = led.done_ms - twinkle_ms/2.;
-            auto from_peak = abs((int)(ms-ms_peak));
-            auto level = 1. - from_peak / (twinkle_ms/2);
+            double ms_peak = led.done_ms - twinkle_ms/2.;
+            double from_peak = abs((int)(ms-ms_peak));
+            double level = 1. - from_peak / (twinkle_ms/2);
             
             uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
             leds[led.led_number] = color;
@@ -857,7 +857,8 @@ private:
     };
     static explosion_t arr[100];
     nonstd::ring_span<explosion_t> explosions_;
-    uint32_t next_ms_;
+    // using double forces math to be smooth
+    double next_ms_;
 
 public:
     ExplosionPattern() 
@@ -920,7 +921,9 @@ public:
         }
         
         for(auto & explosion : explosions_) {
-            Color color = color_at_brightness(explosion.explosion_color, brightness_);
+            // Convert brightness from percentage (0-100) to 0-255 scale
+            uint8_t brightness_255 = (brightness_ * 255) / 100;
+            Color color = color_at_brightness(explosion.explosion_color, brightness_255);
             for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
                 auto distance = abs(x);
                 int i = explosion.center_led_number + x;
@@ -1024,6 +1027,7 @@ public:
                 return "Rate must be 1-50";
             }
             rate_ = value;
+            Serial.printf("set rate to %d\n", rate_);
         }
         return nullptr;
     }
@@ -2070,15 +2074,7 @@ void set_program(JsonDocument & doc) {
         // Apply parameters if provided
         auto parameters = doc["parameters"];
         if (!parameters.isNull()) {
-          // Handle brightness
-          auto brightness = parameters["brightness"];
-          if (brightness.is<int>()) {
-            int value = brightness.as<int>();
-            pattern->set_parameter_int("brightness", value);
-            Serial.printf("Set brightness = %d\n", value);
-          }
-          
-          // Handle colors (array of hex strings)
+          // Handle colors (special case - array of hex strings)
           auto colors = parameters["colors"].as<JsonArray>();
           if (!colors.isNull() && colors.size() > 0) {
             global_color_count = 0;
@@ -2099,21 +2095,27 @@ void set_program(JsonDocument & doc) {
             Serial.printf("Set %d colors\n", global_color_count);
           }
           
-          // Handle pattern-specific parameters
-          // Duration (for Breathe)
-          auto duration = parameters["duration"];
-          if (duration.is<int>()) {
-            int value = duration.as<int>();
-            pattern->set_parameter_int("duration", value);
-            Serial.printf("Set duration = %d\n", value);
-          }
-          
-          // Spacing (for Solid)
-          auto spacing = parameters["spacing"];
-          if (spacing.is<int>()) {
-            int value = spacing.as<int>();
-            pattern->set_parameter_int("spacing", value);
-            Serial.printf("Set spacing = %d\n", value);
+          // Handle all integer parameters - let the pattern decide what to use
+          JsonObject params_obj = parameters.as<JsonObject>();
+          for (JsonPair kv : params_obj) {
+            const char* key = kv.key().c_str();
+            JsonVariant value = kv.value();
+            
+            // Skip colors array (already handled above)
+            if (strcmp(key, "colors") == 0) {
+              continue;
+            }
+            
+            // Set integer parameters
+            if (value.is<int>()) {
+              int int_value = value.as<int>();
+              const char* error = pattern->set_parameter_int(key, int_value);
+              if (error == nullptr) {
+                Serial.printf("Set %s = %d\n", key, int_value);
+              } else {
+                Serial.printf("Error setting %s: %s\n", key, error);
+              }
+            }
           }
         }
         
