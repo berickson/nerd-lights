@@ -296,23 +296,11 @@ const char * light_mode_name(LightMode mode) {
 // These come early so command functions can call their methods
 ////////////////////////////////////////////
 
-// Forward declarations and helper functions needed by patterns
-const Color black = {0,0,0};
-
-float gamma_percent(float percent, float gamma = 2.8) {
-  return powf(percent, gamma);
-}
-
-Color color_at_brightness(Color color, uint8_t new_brightness) {
-  Color c = color;
-  uint32_t max_c = max<uint8_t>(max<uint8_t>(c.r,c.g),c.b);
-  if(max_c > 0) {
-    c.r = mul_div(c.r, new_brightness, max_c);
-    c.g = mul_div(c.g, new_brightness, max_c);
-    c.b = mul_div(c.b, new_brightness, max_c);
-  }
-  return c;
-}
+// Forward declarations for functions needed by patterns
+extern const Color black;
+float gamma_percent(float percent, float gamma = 2.8);
+Color color_at_brightness(Color color, uint8_t new_brightness);
+inline uint8_t mul_div(uint8_t number, uint32_t numerator, uint32_t denominator);
 
 // Parameter types for pattern configuration
 enum class ParameterType {
