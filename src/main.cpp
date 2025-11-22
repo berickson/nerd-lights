@@ -393,18 +393,9 @@ public:
     }
     
     void render(Color* leds, int led_count, uint32_t time_ms) override {
-        auto apply_brightness = [this](const Color& c) -> Color {
-            float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
-            return {
-                (uint8_t)(c.r * gamma_brightness),
-                (uint8_t)(c.g * gamma_brightness),
-                (uint8_t)(c.b * gamma_brightness)
-            };
-        };
-        
         for (int i = 0; i < led_count; i++) {
             int color_index = (i / spacing_) % global_color_count;
-            leds[i] = apply_brightness(global_colors[color_index]);
+            leds[i] = global_colors[color_index];
         }
     }
     
@@ -572,8 +563,6 @@ public:
         double shift_left = 0;  // No animation for now
         RepeatingPattern p(led_count, n_colors, stretch, shift_left);
         
-        float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
-        
         for(int i = 0; i<led_count; ++i) {
             auto r = p.segment_percent(i);
             if(r.segment >= n_colors) {
@@ -581,12 +570,7 @@ public:
             }
             Color color_a = global_colors[r.segment];
             Color color_b = global_colors[(r.segment+1)%n_colors];
-            Color color = mix_colors(color_a, color_b, r.percent);
-            leds[i] = Color(
-                (uint8_t)(color.r * gamma_brightness),
-                (uint8_t)(color.g * gamma_brightness),
-                (uint8_t)(color.b * gamma_brightness)
-            );
+            leds[i] = mix_colors(color_a, color_b, r.percent);
         }
     }
     
@@ -930,9 +914,7 @@ public:
         }
         
         for(auto & explosion : explosions_) {
-            // Convert brightness from percentage (0-100) to 0-255 scale
-            uint8_t brightness_255 = (brightness_ * 255) / 100;
-            Color color = color_at_brightness(explosion.explosion_color, brightness_255);
+            Color color = explosion.explosion_color;
             for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
                 auto distance = abs(x);
                 int i = explosion.center_led_number + x;
@@ -1096,10 +1078,9 @@ public:
             float percent = 1-(i-division_start)/(division_end-division_start);
             float part_a = gamma_percent(percent, 2.8);
             
-            float gamma_brightness = (brightness_ * brightness_) / 10000.0f;
-            Color color(color_a.r * part_a * gamma_brightness, 
-                       color_a.g * part_a * gamma_brightness, 
-                       color_a.b * part_a * gamma_brightness);
+            Color color(color_a.r * part_a, 
+                       color_a.g * part_a, 
+                       color_a.b * part_a);
             leds[i]=color;
         }
     }
@@ -4102,7 +4083,19 @@ void cmd_pattern_reset(CommandEnvironment &env) {
 void render_with_pattern_system() {
     PatternBase* active = pattern_registry.get_active_pattern();
     if (active) {
+        // Patterns render at full brightness
         active->render(&leds[0], led_count, clock_millis());
+        
+        // Post-process: Apply brightness scaling
+        int brightness_value = active->get_parameter_int("brightness");
+        if (brightness_value < 100) {
+            float gamma_brightness = (brightness_value * brightness_value) / 10000.0f;
+            for (int i = 0; i < led_count; i++) {
+                leds[i].r = (uint8_t)(leds[i].r * gamma_brightness);
+                leds[i].g = (uint8_t)(leds[i].g * gamma_brightness);
+                leds[i].b = (uint8_t)(leds[i].b * gamma_brightness);
+            }
+        }
     }
 }
 
