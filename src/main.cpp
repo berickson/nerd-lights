@@ -3413,6 +3413,36 @@ void mqtt_callback(char* topic, byte* message, unsigned int length) {
   // }
 }
 
+// MQTT Connection State Management
+enum MqttConnectionState {
+  MQTT_STATE_IDLE,          // Not connected, not trying
+  MQTT_STATE_CONNECTING,    // Connection attempt in progress
+  MQTT_STATE_CONNECTED,     // Successfully connected
+  MQTT_STATE_FAILED         // Connection failed, waiting for retry
+};
+
+MqttConnectionState mqtt_state = MQTT_STATE_IDLE;
+unsigned long mqtt_last_connect_attempt_ms = 0;
+unsigned long mqtt_backoff_delay_ms = 1000;  // Start with 1 second
+const unsigned long MQTT_MAX_BACKOFF_MS = 30000;  // Max 30 seconds
+const unsigned long MQTT_CONNECT_TIMEOUT_MS = 10000;  // 10 second timeout
+
+const char* mqtt_state_to_string(int state) {
+  switch(state) {
+    case -4: return "MQTT_CONNECTION_TIMEOUT - server didn't respond";
+    case -3: return "MQTT_CONNECTION_LOST - network connection broken";
+    case -2: return "MQTT_CONNECT_FAILED - network connection failed";
+    case -1: return "MQTT_DISCONNECTED - client disconnected cleanly";
+    case 0: return "MQTT_CONNECTED";
+    case 1: return "MQTT_CONNECT_BAD_PROTOCOL - wrong protocol version";
+    case 2: return "MQTT_CONNECT_BAD_CLIENT_ID - client ID rejected";
+    case 3: return "MQTT_CONNECT_UNAVAILABLE - server unavailable";
+    case 4: return "MQTT_CONNECT_BAD_CREDENTIALS - wrong username/password";
+    case 5: return "MQTT_CONNECT_UNAUTHORIZED - not authorized";
+    default: return "MQTT_UNKNOWN_STATE";
+  }
+}
+
 bool mqtt_subscribed = false;
 
 void loop() {
@@ -3456,14 +3486,67 @@ void loop() {
     Serial.println("command long pressed");
   }
 
-  if (every_n_ms(last_loop_ms, loop_ms, 5000)) {
-    if(is_wifi_connected_to_internet() && !mqtt.connected()) {
+  // MQTT Connection State Machine
+  if(is_wifi_connected_to_internet()) {
+    switch(mqtt_state) {
+      case MQTT_STATE_IDLE:
+      case MQTT_STATE_FAILED:
+        // Check if enough time has passed for retry
+        if(loop_ms - mqtt_last_connect_attempt_ms >= mqtt_backoff_delay_ms) {
+          mqtt_subscribed = false;
+          mqtt_last_connect_attempt_ms = loop_ms;
+          mqtt_state = MQTT_STATE_CONNECTING;
+          
+          const char * username = "api_user";
+          const char * password = "api_user";
+          bool connect_result = mqtt.connect(mqtt_client_id, username, password);
+          
+          if(connect_result) {
+            Serial.printf("MQTT connected immediately as %s\n", mqtt_client_id);
+            mqtt_state = MQTT_STATE_CONNECTED;
+            mqtt_backoff_delay_ms = 1000;  // Reset backoff on success
+          } else {
+            Serial.printf("MQTT connection attempt started for %s\n", mqtt_client_id);
+            // Will check state in CONNECTING case
+          }
+        }
+        break;
+        
+      case MQTT_STATE_CONNECTING:
+        // Check if connection completed
+        if(mqtt.connected()) {
+          Serial.printf("MQTT connected as %s\n", mqtt_client_id);
+          mqtt_state = MQTT_STATE_CONNECTED;
+          mqtt_backoff_delay_ms = 1000;  // Reset backoff on success
+        } 
+        // Check for timeout
+        else if(loop_ms - mqtt_last_connect_attempt_ms > MQTT_CONNECT_TIMEOUT_MS) {
+          int mqtt_error = mqtt.state();
+          Serial.printf("MQTT connection timeout, state=%d (%s), retrying in %lums\n", 
+                        mqtt_error, mqtt_state_to_string(mqtt_error), mqtt_backoff_delay_ms);
+          mqtt_state = MQTT_STATE_FAILED;
+          
+          // Exponential backoff, capped at max
+          mqtt_backoff_delay_ms = min(mqtt_backoff_delay_ms * 2, MQTT_MAX_BACKOFF_MS);
+        }
+        break;
+        
+      case MQTT_STATE_CONNECTED:
+        // Check if disconnected
+        if(!mqtt.connected()) {
+          Serial.println("MQTT disconnected, will reconnect");
+          mqtt_state = MQTT_STATE_IDLE;
+          mqtt_subscribed = false;
+          mqtt_backoff_delay_ms = 1000;  // Reset backoff
+        }
+        break;
+    }
+  } else {
+    // No internet, reset to idle state
+    if(mqtt_state != MQTT_STATE_IDLE) {
+      Serial.println("WiFi lost, resetting MQTT state");
+      mqtt_state = MQTT_STATE_IDLE;
       mqtt_subscribed = false;
-      const char * username = "api_user";
-      const char * password = "api_user";
-      mqtt.connect(mqtt_client_id, username, password);
-      Serial.printf("connecting to MQTT as %s\n", mqtt_client_id);
-
     }
   }
 
@@ -4050,6 +4133,12 @@ void init_pattern_system() {
 
 // Publish pattern definitions to MQTT - called from setup() after pattern init
 void publish_pattern_definitions() {
+    // Guard: Only publish if MQTT is connected
+    if(!mqtt.connected()) {
+        Serial.println("Skipping pattern definitions publish - MQTT not connected");
+        return;
+    }
+    
     char topic[100];
     snprintf(topic, 99, "controllers/%s/patterns", mqtt_client_id);
     const char* json = pattern_registry.patterns_to_json();
