@@ -728,6 +728,7 @@ public:
 class TwinklePattern : public PatternBase {
 private:
     int brightness_;
+    int amount_;
     struct blinking_led_t {
         uint16_t led_number;
         uint32_t done_ms;
@@ -740,6 +741,7 @@ private:
 public:
     TwinklePattern() 
         : brightness_(100), 
+          amount_(10), // percent expected to blink at once
           blinking_leds_(arr, arr + 100, arr, 0),
           next_ms_(0) {}
     
@@ -749,7 +751,7 @@ public:
     }
     const char* get_help() const override {
         return "Creates a sparkling starfield effect with colors randomly twinkling. "
-               "About 10% of LEDs twinkle at any given time.";
+               "Control density with 'amount' parameter (default 10%).";
     }
     
     std::vector<const char*> get_global_parameters_used() const override {
@@ -757,7 +759,17 @@ public:
     }
     
     std::vector<ParameterDef> get_local_parameters() const override {
-        return {};
+        ParameterDef amount;
+        amount.name = "amount";
+        amount.type = ParameterType::PERCENTAGE;
+        amount.description = "Percentage of LEDs twinkling at any time";
+        amount.default_value = 10;
+        amount.min_value = 0;
+        amount.max_value = 100;
+        amount.unit = "%";
+        amount.scale = "linear";
+        
+        return {amount};
     }
     
     void render(Color* leds, int led_count, uint32_t time_ms) override {
@@ -768,7 +780,7 @@ public:
             next_ms_ = ms;
         }
         
-        float ratio_twinkling = .1;
+        float ratio_twinkling = amount_ / 100.0;
         uint32_t average_twinkling_count = led_count * ratio_twinkling;
         uint32_t max_twinkling_count = 100;
         uint16_t twinkle_ms = 1000;
@@ -821,17 +833,24 @@ public:
                 return "Brightness must be 0-100";
             }
             brightness_ = value;
+        } else if (strcmp(name, "amount") == 0) {
+            if (value < 0 || value > 100) {
+                return "Amount must be 0-100";
+            }
+            amount_ = value;
         }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
         if (strcmp(name, "brightness") == 0) return brightness_;
+        if (strcmp(name, "amount") == 0) return amount_;
         return 0;
     }
     
     void reset() override {
         brightness_ = 100;
+        amount_ = 10;
         next_ms_ = 0;
         blinking_leds_ = nonstd::ring_span<blinking_led_t>(arr, arr + 100, arr, 0);
     }
