@@ -117,6 +117,7 @@ StaticJsonDocument<2000> last_pattern_parameters;
 // Global pattern system state (shared across all patterns)
 Color global_colors[10] = {{0xFF, 0xA5, 0x00}}; // Default: warm orange
 int global_color_count = 1;
+int global_brightness = 100; // 0-100%, applied as post-processing
 
 // Forward declarations for functions defined after pattern classes
 void set_program(JsonDocument & doc);
@@ -355,12 +356,11 @@ public:
 
 class SolidPattern : public PatternBase {
 private:
-    int brightness_;
     int spacing_;
 
 public:
     SolidPattern() 
-        : brightness_(100), spacing_(1)
+        : spacing_(1)
     {
     }
     
@@ -400,12 +400,7 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        } else if (strcmp(name, "spacing") == 0) {
+        if (strcmp(name, "spacing") == 0) {
             if (value < 1 || value > 100) {
                 return "Spacing must be 1-100";
             }
@@ -416,25 +411,22 @@ public:
     
     int get_parameter_int(const char* name) const override {
         if (strcmp(name, "spacing") == 0) return spacing_;
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
         spacing_ = 1;
-        brightness_ = 100;
     }
 };
 
 class BreathePattern : public PatternBase {
 private:
-    int brightness_;
     int duration_;
     uint32_t cycle_start_ms_;
 
 public:
     BreathePattern()
-        : brightness_(100), duration_(1500), cycle_start_ms_(0)
+        : duration_(1500), cycle_start_ms_(0)
     {
     }
     
@@ -505,12 +497,7 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        } else if (strcmp(name, "duration") == 0) {
+        if (strcmp(name, "duration") == 0) {
             if (value < 250 || value > 10000) {
                 return "Duration must be 250-10000 milliseconds";
             }
@@ -521,23 +508,18 @@ public:
     
     int get_parameter_int(const char* name) const override {
         if (strcmp(name, "duration") == 0) return duration_;
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
         cycle_start_ms_ = 0;
         duration_ = 1500;
-        brightness_ = 100;
     }
 };
 
 class GradientPattern : public PatternBase {
-private:
-    int brightness_;
-
 public:
-    GradientPattern() : brightness_(100) {}
+    GradientPattern() {}
     
     const char* get_name() const override { return "Gradient"; }
     const char* get_description() const override {
@@ -575,31 +557,20 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
     }
 };
 
 class ConfettiPattern : public PatternBase {
-private:
-    int brightness_;
-
 public:
-    ConfettiPattern() : brightness_(100) {}
+    ConfettiPattern() {}
     
     const char* get_name() const override { return "Confetti"; }
     const char* get_description() const override {
@@ -640,31 +611,20 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
     }
 };
 
 class FlickerPattern : public PatternBase {
-private:
-    int brightness_;
-
 public:
-    FlickerPattern() : brightness_(100) {}
+    FlickerPattern() {}
     
     const char* get_name() const override { return "Flicker"; }
     const char* get_description() const override {
@@ -706,28 +666,19 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
     }
 };
 
 class TwinklePattern : public PatternBase {
 private:
-    int brightness_;
     int amount_;
     struct blinking_led_t {
         uint16_t led_number;
@@ -740,8 +691,7 @@ private:
 
 public:
     TwinklePattern() 
-        : brightness_(100), 
-          amount_(10), // percent expected to blink at once
+        : amount_(10), // percent expected to blink at once
           blinking_leds_(arr, arr + 100, arr, 0),
           next_ms_(0) {}
     
@@ -828,12 +778,7 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        } else if (strcmp(name, "amount") == 0) {
+        if (strcmp(name, "amount") == 0) {
             if (value < 0 || value > 100) {
                 return "Amount must be 0-100";
             }
@@ -843,13 +788,11 @@ public:
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         if (strcmp(name, "amount") == 0) return amount_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
         amount_ = 10;
         next_ms_ = 0;
         blinking_leds_ = nonstd::ring_span<blinking_led_t>(arr, arr + 100, arr, 0);
@@ -860,7 +803,6 @@ TwinklePattern::blinking_led_t TwinklePattern::arr[100];
 
 class ExplosionPattern : public PatternBase {
 private:
-    int brightness_;
     struct explosion_t {
         int16_t center_led_number;
         int32_t start_ms;
@@ -874,8 +816,7 @@ private:
 
 public:
     ExplosionPattern() 
-        : brightness_(100),
-          explosions_(arr, arr + 100, arr, 0),
+        : explosions_(arr, arr + 100, arr, 0),
           next_ms_(0) {}
     
     const char* get_name() const override { return "Explosion"; }
@@ -952,22 +893,14 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
         next_ms_ = 0;
         explosions_ = nonstd::ring_span<explosion_t>(arr, arr + 100, arr, 0);
     }
@@ -977,11 +910,10 @@ ExplosionPattern::explosion_t ExplosionPattern::arr[100];
 
 class StrobePattern : public PatternBase {
 private:
-    int brightness_;
     int rate_;
 
 public:
-    StrobePattern() : brightness_(100), rate_(10) {}
+    StrobePattern() : rate_(10) {}
     
     const char* get_name() const override { return "Strobe"; }
     const char* get_description() const override {
@@ -1027,12 +959,7 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        } else if (strcmp(name, "rate") == 0) {
+        if (strcmp(name, "rate") == 0) {
             if (value < 1 || value > 50) {
                 return "Rate must be 1-50";
             }
@@ -1043,23 +970,18 @@ public:
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         if (strcmp(name, "rate") == 0) return rate_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
         rate_ = 10;
     }
 };
 
 class MeteorPattern : public PatternBase {
-private:
-    int brightness_;
-
 public:
-    MeteorPattern() : brightness_(100) {}
+    MeteorPattern() {}
     
     const char* get_name() const override { return "Meteor"; }
     const char* get_description() const override {
@@ -1105,31 +1027,20 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
     }
 };
 
 class ChasePattern : public PatternBase {
-private:
-    int brightness_;
-
 public:
-    ChasePattern() : brightness_(100) {}
+    ChasePattern() {}
     
     const char* get_name() const override { return "Chase"; }
     const char* get_description() const override {
@@ -1192,22 +1103,14 @@ public:
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        if (strcmp(name, "brightness") == 0) {
-            if (value < 0 || value > 100) {
-                return "Brightness must be 0-100";
-            }
-            brightness_ = value;
-        }
         return nullptr;
     }
     
     int get_parameter_int(const char* name) const override {
-        if (strcmp(name, "brightness") == 0) return brightness_;
         return 0;
     }
     
     void reset() override {
-        brightness_ = 100;
     }
 };
 
@@ -2104,7 +2007,7 @@ void set_program(JsonDocument & doc) {
             Serial.printf("Set %d colors\n", global_color_count);
           }
           
-          // Handle all integer parameters - let the pattern decide what to use
+          // Handle all integer parameters
           JsonObject params_obj = parameters.as<JsonObject>();
           for (JsonPair kv : params_obj) {
             const char* key = kv.key().c_str();
@@ -2115,7 +2018,19 @@ void set_program(JsonDocument & doc) {
               continue;
             }
             
-            // Set integer parameters
+            // Handle brightness as global parameter
+            if (strcmp(key, "brightness") == 0 && value.is<int>()) {
+              int brightness_value = value.as<int>();
+              if (brightness_value >= 0 && brightness_value <= 100) {
+                global_brightness = brightness_value;
+                Serial.printf("Set global brightness = %d\n", brightness_value);
+              } else {
+                Serial.printf("Error: brightness must be 0-100, got %d\n", brightness_value);
+              }
+              continue;
+            }
+            
+            // Set integer parameters (pattern-specific)
             if (value.is<int>()) {
               int int_value = value.as<int>();
               const char* error = pattern->set_parameter_int(key, int_value);
@@ -4105,14 +4020,13 @@ void render_with_pattern_system() {
         // Patterns render at full brightness
         active->render(&leds[0], led_count, clock_millis());
         
-        // Post-process: Apply brightness scaling
-        int brightness_value = active->get_parameter_int("brightness");
-        if (brightness_value < 100) {
-            float gamma_brightness = (brightness_value * brightness_value) / 10000.0f;
+        // Post-process: Apply global brightness scaling
+        if (global_brightness < 100) {
+            float float_brightness = global_brightness / 100.0f;
             for (int i = 0; i < led_count; i++) {
-                leds[i].r = (uint8_t)(leds[i].r * gamma_brightness);
-                leds[i].g = (uint8_t)(leds[i].g * gamma_brightness);
-                leds[i].b = (uint8_t)(leds[i].b * gamma_brightness);
+                leds[i].r = (uint8_t)(leds[i].r * float_brightness);
+                leds[i].g = (uint8_t)(leds[i].g * float_brightness);
+                leds[i].b = (uint8_t)(leds[i].b * float_brightness);
             }
         }
     }
