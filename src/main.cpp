@@ -234,7 +234,7 @@ uint8_t brightness = 50;
 
 // breathe pattern variables
 uint32_t breathe_cycle_start_ms = 0;
-uint32_t breathe_duration_ms = 6000;
+uint32_t breathe_duration_ms = 1500;
 
 // solid pattern variables
 uint16_t pattern_spacing = 1;
@@ -443,7 +443,7 @@ private:
 
 public:
     BreathePattern()
-        : brightness_(100), duration_(6000), cycle_start_ms_(0)
+        : brightness_(100), duration_(1500), cycle_start_ms_(0)
     {
     }
     
@@ -458,11 +458,20 @@ public:
     }
     
     std::vector<const char*> get_global_parameters_used() const override {
-        return {"brightness", "colors", "duration"};
+        return {"brightness", "colors"};
     }
     
     std::vector<ParameterDef> get_local_parameters() const override {
-        return {};
+        ParameterDef duration;
+        duration.name = "duration";
+        duration.type = ParameterType::DURATION;
+        duration.description = "Length of each complete breath cycle";
+        duration.default_value = 1500;
+        duration.min_value = 250;
+        duration.max_value = 10000;
+        duration.unit = "ms";
+        duration.scale = "linear";
+        return {duration};
     }
     
     void render(Color* leds, int led_count, uint32_t time_ms) override {
@@ -511,8 +520,8 @@ public:
             }
             brightness_ = value;
         } else if (strcmp(name, "duration") == 0) {
-            if (value < 1000 || value > 10000) {
-                return "Duration must be 1000-10000 milliseconds";
+            if (value < 250 || value > 10000) {
+                return "Duration must be 250-10000 milliseconds";
             }
             duration_ = value;
         }
@@ -527,7 +536,7 @@ public:
     
     void reset() override {
         cycle_start_ms_ = 0;
-        duration_ = 6000;
+        duration_ = 1500;
         brightness_ = 100;
     }
 };
