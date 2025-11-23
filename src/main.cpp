@@ -152,7 +152,7 @@ strand_t *strands[8];
 // helpers
 ////////////////////////////////////////////
 uint32_t clock_millis() {
-  //return millis();
+    return millis();
     auto start = std::chrono::system_clock::now();
     auto since_epoch = start.time_since_epoch();
     uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(since_epoch).count();
@@ -980,8 +980,17 @@ public:
 };
 
 class MeteorPattern : public PatternBase {
+private:
+    float movement_;
+    float length_;
+    float tail_fade_;
+
 public:
-    MeteorPattern() {}
+    MeteorPattern() 
+        : movement_(20.0),
+          length_(50.0),
+          tail_fade_(2.8)
+    {}
     
     const char* get_name() const override { return "Meteor"; }
     const char* get_description() const override {
@@ -989,7 +998,7 @@ public:
     }
     const char* get_help() const override {
         return "Creates meteor/comet tails that fade from bright to dark. "
-               "Each color gets its own section with a trailing fade effect.";
+               "Each color gets its own meteor with a trailing fade effect that moves along the strand.";
     }
     
     std::vector<const char*> get_global_parameters_used() const override {
@@ -997,44 +1006,116 @@ public:
     }
     
     std::vector<ParameterDef> get_local_parameters() const override {
-        return {};
+        ParameterDef movement;
+        movement.name = "movement";
+        movement.type = ParameterType::NUMBER;
+        movement.description = "How fast meteors travel in pixels/second";
+        movement.default_value = 20;
+        movement.min_value = -1000;
+        movement.max_value = 1000;
+        movement.unit = "px/s";
+        movement.scale = "linear";
+        
+        ParameterDef length;
+        length.name = "length";
+        length.type = ParameterType::NUMBER;
+        length.description = "How many pixels long each meteor is";
+        length.default_value = 50;
+        length.min_value = 5;
+        length.max_value = 500;
+        length.unit = "px";
+        length.scale = "linear";
+        
+        ParameterDef tail_fade;
+        tail_fade.name = "tail_fade";
+        tail_fade.type = ParameterType::NUMBER;
+        tail_fade.description = "How sharply the tail fades (gamma correction)";
+        tail_fade.default_value = 2.8;
+        tail_fade.min_value = 0.1;
+        tail_fade.max_value = 10.0;
+        tail_fade.unit = "";
+        tail_fade.scale = "linear";
+        
+        return {movement, length, tail_fade};
     }
     
     void render(Color* leds, int led_count, uint32_t time_ms) override {
         size_t n_colors = global_color_count;
-        int divisions = n_colors;
-        int division = 1;
-        double division_start = 0;
-        double percent = (double)division/divisions;
-        double division_end = led_count * percent;
         
-        for(int i = 0; i<led_count; ++i) {
-            if(i>division_end) {
-                ++division;
-                division_start = division_end;
-                percent = (double)division/divisions;
-                division_end = led_count * percent;
-            }
-            Color color_a = global_colors[division-1];
-            float percent = 1-(i-division_start)/(division_end-division_start);
-            float part_a = gamma_percent(percent, 2.8);
+        // Calculate movement offset (in LED positions)
+        // Positive movement_ should move forward (head leads tail)
+        double shift_left = movement_ * time_ms / 1000.0;
+        
+        // For each LED, calculate which meteor it belongs to in the infinite pattern
+        for(int i = 0; i < led_count; ++i) {
+            // Position in the infinite pattern (accounting for movement)
+            double pattern_position = i + shift_left;
             
-            Color color(color_a.r * part_a, 
-                       color_a.g * part_a, 
-                       color_a.b * part_a);
-            leds[i]=color;
+            // The pattern repeats every (length_ * n_colors) pixels
+            double pattern_length = length_ * n_colors;
+            double position_in_pattern = fmod(pattern_position, pattern_length);
+            if (position_in_pattern < 0) position_in_pattern += pattern_length;
+            
+            // Which meteor (color) are we in?
+            int color_index = (int)(position_in_pattern / length_) % n_colors;
+            Color color_a = global_colors[color_index];
+            
+            // Position within this meteor (0 to length_)
+            float pixel_in_meteor = fmod(position_in_pattern, length_);
+            
+            float intensity = 0.0;
+            if (pixel_in_meteor < length_) {
+                // Within meteor length - fade direction depends on movement direction
+                // Positive movement: head at 0, tail fades toward length_
+                // Negative movement: head at length_, tail fades toward 0
+                float fade_position;
+                if (movement_ >= 0) {
+                    fade_position = 1.0 - (pixel_in_meteor / length_);  // Bright at 0, dim at length_
+                } else {
+                    fade_position = pixel_in_meteor / length_;  // Dim at 0, bright at length_
+                }
+                intensity = gamma_percent(fade_position, tail_fade_);
+            }
+            
+            leds[i] = Color(color_a.r * intensity,
+                           color_a.g * intensity,
+                           color_a.b * intensity);
         }
     }
     
     const char* set_parameter_int(const char* name, int value) override {
-        return nullptr;
+        if (strcmp(name, "movement") == 0) {
+            movement_ = (float)value;
+            return nullptr;
+        }
+        if (strcmp(name, "length") == 0) {
+            length_ = (float)value;
+            return nullptr;
+        }
+        if (strcmp(name, "tail_fade") == 0) {
+            tail_fade_ = (float)value;
+            return nullptr;
+        }
+        return "Unknown parameter";
     }
     
     int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "movement") == 0) {
+            return (int)movement_;
+        }
+        if (strcmp(name, "length") == 0) {
+            return (int)length_;
+        }
+        if (strcmp(name, "tail_fade") == 0) {
+            return (int)tail_fade_;
+        }
         return 0;
     }
     
     void reset() override {
+        movement_ = 20.0;
+        length_ = 50.0;
+        tail_fade_ = 2.8;
     }
 };
 
@@ -1316,7 +1397,7 @@ public:
     PatternBase* get_active_pattern() const { return active_pattern_; }
     
     const char* patterns_to_json() const {
-        static char json_buffer[4096];
+        static char json_buffer[8192];
         char* p = json_buffer;
         
         p += sprintf(p, "{\"patterns\":[");
@@ -1412,7 +1493,7 @@ void update_pixels() {
     digitalLeds_drawPixels(strands, STRANDCNT);
   #endif
 
-  delay(20);
+  delay(1);  // Minimal delay to prevent tight loop, was 20ms
 }
 
 void off() { 
@@ -2898,7 +2979,7 @@ void setup() {
     }
   );
 
-  mqtt.setBufferSize(4096);
+  mqtt.setBufferSize(8192);
   mqtt.setServer("nerdlights.net", 1883);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
@@ -3830,9 +3911,20 @@ Below stuff would be good for a config page
     }
   }
 
-
-  if(every_n_ms(last_loop_ms, loop_ms, 30)) {
+  const float desired_fps = 30.0;
+  if(every_n_ms(last_loop_ms, loop_ms, (int)(1000 / desired_fps))) {
     ++draw_count;
+
+    // FPS measurement
+    static unsigned long fps_frame_count = 0;
+    static unsigned long fps_last_print_ms = 0;
+    ++fps_frame_count;
+    if (loop_ms - fps_last_print_ms >= 1000) {
+      float fps = fps_frame_count * 1000.0 / (loop_ms - fps_last_print_ms);
+      Serial.printf("FPS: %.1f\n", fps);
+      fps_frame_count = 0;
+      fps_last_print_ms = loop_ms;
+    }
 
     if(lights_on) {
       switch (light_mode) {
