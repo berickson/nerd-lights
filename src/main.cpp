@@ -3734,8 +3734,8 @@ void loop() {
     // NOTE: lights_on status now handled through observable pattern (actuals topic)
   }
 
-  // every 10 minutes, publish statistics
-  if (every_n_ms(last_loop_ms, loop_ms, 10*60*1000)) {
+  // every 30 seconds, publish statistics
+  if (every_n_ms(last_loop_ms, loop_ms, 30*1000)) {
     publish_statistics();
   }
 
