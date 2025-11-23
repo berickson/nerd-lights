@@ -3998,16 +3998,16 @@ Below stuff would be good for a config page
   if(every_n_ms(last_loop_ms, loop_ms, (int)(1000 / desired_fps))) {
     ++draw_count;
 
-    // FPS measurement
-    static unsigned long fps_frame_count = 0;
-    static unsigned long fps_last_print_ms = 0;
-    ++fps_frame_count;
-    if (loop_ms - fps_last_print_ms >= 1000) {
-      float fps = fps_frame_count * 1000.0 / (loop_ms - fps_last_print_ms);
-      Serial.printf("FPS: %.1f\n", fps);
-      fps_frame_count = 0;
-      fps_last_print_ms = loop_ms;
-    }
+    // // FPS measurement
+    // static unsigned long fps_frame_count = 0;
+    // static unsigned long fps_last_print_ms = 0;
+    // ++fps_frame_count;
+    // if (loop_ms - fps_last_print_ms >= 1000) {
+    //   float fps = fps_frame_count * 1000.0 / (loop_ms - fps_last_print_ms);
+    //   Serial.printf("FPS: %.1f\n", fps);
+    //   fps_frame_count = 0;
+    //   fps_last_print_ms = loop_ms;
+    // }
 
     if(lights_on) {
       // Use pattern system if enabled, regardless of light_mode
