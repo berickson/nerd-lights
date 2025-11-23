@@ -1114,6 +1114,152 @@ public:
     }
 };
 
+class LightningPattern : public PatternBase {
+private:
+    int intensity_;
+    
+    // State variables (equivalent to WLED's SEGENV)
+    uint8_t flash_count_;      // Number of flashes remaining (SEGENV.aux1)
+    uint32_t delay_ms_;        // Delay until next flash (SEGENV.aux0)
+    uint32_t last_update_ms_;  // Last update time (SEGENV.step)
+    uint16_t flash_start_;     // Starting LED for current flash
+    uint16_t flash_len_;       // Length of current flash
+    Color flash_color;
+    
+public:
+    LightningPattern() 
+        : intensity_(128),
+          flash_count_(0),
+          delay_ms_(0),
+          last_update_ms_(0),
+          flash_start_(0),
+          flash_len_(0)
+    {}
+    
+    const char* get_name() const override { return "Lightning"; }
+    const char* get_description() const override {
+        return "Random lightning flashes with leader and strike pattern";
+    }
+    const char* get_help() const override {
+        return "Simulates realistic lightning with dimmer leader flash followed by "
+               "multiple bright strikes. Higher intensity creates more frequent and "
+               "longer lightning sequences.";
+    }
+    
+    std::vector<const char*> get_global_parameters_used() const override {
+        return {"brightness", "colors"};
+    }
+    
+    std::vector<ParameterDef> get_local_parameters() const override {
+        ParameterDef intensity;
+        intensity.name = "intensity";
+        intensity.type = ParameterType::NUMBER;
+        intensity.description = "Lightning frequency and duration";
+        intensity.default_value = 128;
+        intensity.min_value = 0;
+        intensity.max_value = 255;
+        intensity.unit = "";
+        intensity.scale = "linear";
+        return {intensity};
+    }
+    
+    void render(Color* leds, int led_count, uint32_t time_ms) override {
+        if (led_count <= 1) {
+            // Fallback to solid color for single LED
+            if (led_count == 1) {
+                leds[0] = flash_color;
+            }
+            return;
+        }
+        
+        uint8_t bri = 255;  // Default brightness for main flashes
+        
+        // Initialize new lightning strike sequence
+        if (flash_count_ == 0) {
+            flash_color = global_colors[rand()%global_color_count];
+            // Determine starting location and length of flash
+            flash_start_ = rand() % led_count;
+            flash_len_ = 1 + rand() % (led_count - flash_start_);
+            
+            // Init leader flash (dimmer initial flash)
+            int flashes = (intensity_ < 20) ? 4 : 4 + (intensity_ / 20);
+            flash_count_ = (rand() % flashes) + 4;  // Random 4 to 4+intensity/20
+            flash_count_ *= 2;  // Make it even for the flashing pattern
+            
+            bri = 52;  // Leader has lower brightness
+            delay_ms_ = 200;  // 200ms delay after leader
+            last_update_ms_ = time_ms;
+        } else {
+            // For main flashes, vary brightness
+            bri = 255 / ((rand() % 3) + 1);  // 255, 127, or 85
+        }
+        
+        // Fill background with black (background color)
+        for (int i = 0; i < led_count; i++) {
+            leds[i] = Color(0, 0, 0);
+        }
+        
+        // Flash on even flash_count_ > 2
+        if (flash_count_ > 3 && (flash_count_ & 1) == 0) {
+            // Draw the lightning flash
+            for (uint16_t i = flash_start_; i < flash_start_ + flash_len_ && i < led_count; i++) {
+                // Apply brightness scaling
+                leds[i].r = (flash_color.r * bri) / 255;
+                leds[i].g = (flash_color.g * bri) / 255;
+                leds[i].b = (flash_color.b * bri) / 255;
+            }
+            flash_count_--;
+            last_update_ms_ = time_ms;
+        } else {
+            // Check if delay has elapsed
+            if (time_ms - last_update_ms_ > delay_ms_) {
+                flash_count_--;
+                if (flash_count_ < 2) {
+                    flash_count_ = 0;  // Reset for next strike
+                }
+                
+                // Set delay between flashes
+                delay_ms_ = 50 + (rand() % 100);  // 50-150ms between flashes
+                if (flash_count_ == 2) {
+                    // Longer delay between complete strikes
+                    int strike_delay_range = (255 - intensity_);
+                    if (strike_delay_range > 0) {
+                        delay_ms_ = (rand() % strike_delay_range) * 100;
+                    } else {
+                        delay_ms_ = 100;  // Minimum delay
+                    }
+                }
+                last_update_ms_ = time_ms;
+            }
+        }
+    }
+    
+    const char* set_parameter_int(const char* name, int value) override {
+        if (strcmp(name, "intensity") == 0) {
+            if (value < 0 || value > 255) {
+                return "Intensity must be 0-255";
+            }
+            intensity_ = value;
+            Serial.printf("set intensity to %d\n", intensity_);
+        }
+        return nullptr;
+    }
+    
+    int get_parameter_int(const char* name) const override {
+        if (strcmp(name, "intensity") == 0) return intensity_;
+        return 0;
+    }
+    
+    void reset() override {
+        intensity_ = 128;
+        flash_count_ = 0;
+        delay_ms_ = 0;
+        last_update_ms_ = 0;
+        flash_start_ = 0;
+        flash_len_ = 0;
+    }
+};
+
 class PatternRegistry {
 private:
     std::vector<PatternBase*> patterns_;
@@ -1246,6 +1392,7 @@ ExplosionPattern explosion_pattern;
 StrobePattern strobe_pattern;
 MeteorPattern meteor_pattern;
 ChasePattern chase_pattern;
+LightningPattern lightning_pattern;
 PatternRegistry pattern_registry;
 
 
@@ -4127,6 +4274,7 @@ void init_pattern_system() {
     pattern_registry.register_pattern(&strobe_pattern);
     pattern_registry.register_pattern(&meteor_pattern);
     pattern_registry.register_pattern(&chase_pattern);
+    pattern_registry.register_pattern(&lightning_pattern);
     pattern_registry.set_active_pattern("Solid");
     Serial.println("Pattern registry initialized");
 }
