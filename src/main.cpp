@@ -1665,14 +1665,34 @@ void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
 
 void get_program_json(ArduinoJson::JsonObject & program)
 {
-  if (use_patterns && last_pattern_name.length() > 0) {
-    // Pattern mode - output pattern format
+  if (use_patterns) {
+    // Pattern mode - output current pattern state from pattern registry
     program["mode"] = "pattern";
-    program["pattern_name"] = last_pattern_name;
     
-    // Echo back parameters (deep copy)
-    if (!last_pattern_parameters.isNull()) {
-      program["parameters"] = last_pattern_parameters.as<JsonObject>();
+    PatternBase* active = pattern_registry.get_active_pattern();
+    if (active) {
+      program["pattern_name"] = active->get_name();
+      
+      // Create parameters object
+      JsonObject parameters = program.createNestedObject("parameters");
+      
+      // Add colors array
+      JsonArray colors_array = parameters.createNestedArray("colors");
+      for (int i = 0; i < global_color_count; i++) {
+        char hex[8];
+        snprintf(hex, sizeof(hex), "#%02X%02X%02X", 
+                 global_colors[i].r, global_colors[i].g, global_colors[i].b);
+        colors_array.add(hex);
+      }
+      
+      // Add brightness
+      parameters["brightness"] = global_brightness;
+      
+      // Add pattern-specific parameters
+      auto local_params = active->get_local_parameters();
+      for (const auto& param : local_params) {
+        parameters[param.name] = active->get_parameter_int(param.name);
+      }
     }
   } else {
     // Legacy mode - output legacy format
@@ -1906,6 +1926,27 @@ void publish_settings() {
   publish_json(topic, doc);
 }
 
+// Save current pattern state to preferences
+void save_pattern_state() {
+  preferences.begin("main");
+  
+  // Get the current program as JSON
+  auto & doc = shared_json_output_doc;
+  doc.clear();
+  JsonObject program = doc.to<JsonObject>();
+  get_program_json(program);
+  
+  // Serialize to string and save
+  String program_json;
+  serializeJson(doc, program_json);
+  preferences.putString("program", program_json);
+  
+  preferences.putBool("lights_on", lights_on);
+  preferences.end();
+  
+  Serial.printf("Saved program to preferences: %s\n", program_json.c_str());
+}
+
 // Observable Pattern: Publish setpoint power (for controller-initiated changes)
 void publish_setpoint_power(String message_id) {
   auto & doc = shared_json_output_doc;
@@ -2100,6 +2141,9 @@ void turn_on() {
   }
   
   lights_on = true;
+  preferences.begin("main");
+  preferences.putBool("lights_on", lights_on);
+  preferences.end();
   // NOTE: Power state now handled through observable pattern (actuals/setpoints)
 }
 
@@ -2108,6 +2152,9 @@ void turn_off() {
     return;
   }
   lights_on = false;
+  preferences.begin("main");
+  preferences.putBool("lights_on", lights_on);
+  preferences.end();
   // NOTE: Power state now handled through observable pattern (actuals/setpoints)
 } 
 
@@ -2273,6 +2320,9 @@ void set_program(JsonDocument & doc) {
         
         turn_on();
         Serial.printf("Pattern activated: %s\n", pattern->get_name());
+        
+        // Save the pattern state to preferences
+        save_pattern_state();
       } else {
         Serial.printf("ERROR: Unknown pattern: %s\n", name);
       }
@@ -2334,6 +2384,9 @@ void set_program(JsonDocument & doc) {
       add_color(c);
     }
   }
+  
+  // Save the legacy program state to preferences
+  save_pattern_state();
 }
 
 
@@ -2985,6 +3038,36 @@ void setup() {
 
   // Initialize pattern system (must be called after all other setup)
   init_pattern_system();
+  
+  // Restore program state from preferences
+  preferences.begin("main");
+  String saved_program = preferences.getString("program", "");
+  bool saved_lights_on = preferences.getBool("lights_on", true);
+  preferences.end();
+  
+  if (saved_program.length() > 0) {
+    Serial.printf("Restoring program from preferences: %s\n", saved_program.c_str());
+    
+    // Parse and apply the saved program
+    auto & doc = shared_json_input_doc;
+    doc.clear();
+    DeserializationError error = deserializeJson(doc, saved_program);
+    if (!error) {
+      set_program(doc);
+      Serial.println("Program restored successfully");
+    } else {
+      Serial.printf("Error parsing saved program: %s\n", error.c_str());
+    }
+  } else {
+    Serial.println("No saved program found, using defaults");
+  }
+  
+  // Restore lights_on state
+  lights_on = saved_lights_on;
+  Serial.printf("Lights state: %s\n", lights_on ? "ON" : "OFF");
+  
+  // Start rendering immediately - pattern is loaded and ready
+  Serial.println("Setup complete - lights will render with last saved pattern");
 
 }  // setup
 
@@ -3927,55 +4010,53 @@ Below stuff would be good for a config page
     }
 
     if(lights_on) {
-      switch (light_mode) {
+      // Use pattern system if enabled, regardless of light_mode
+      if (use_patterns) {
+        render_with_pattern_system();
+      } else {
+        // Legacy rendering based on light_mode
+        switch (light_mode) {
 
-        case mode_rainbow:
-          rainbow();
-          break;
-        case mode_strobe:
-          strobe();
-          break;
-        case mode_stripes:
-          stripes(current_colors, is_tree);
-          break;
-        case mode_twinkle:
-          twinkle();
-          break;
-        case mode_explosion:
-          explosion();
-          break;
-        case mode_gradient:
-          gradient(is_tree);
-          break;
-        case mode_meteor:
-          meteor(is_tree);
-          break;
-        case mode_pattern1:
-          pattern1();
-          break;
-        case mode_normal:
-          normal(current_colors);
-          break;
-        case mode_flicker:
-          flicker(current_colors);
-          break;
-        case mode_confetti:
-          confetti();
-          break;
-        case mode_breathe:
-          if (use_patterns) {
-            render_with_pattern_system();
-          } else {
+          case mode_rainbow:
+            rainbow();
+            break;
+          case mode_strobe:
+            strobe();
+            break;
+          case mode_stripes:
+            stripes(current_colors, is_tree);
+            break;
+          case mode_twinkle:
+            twinkle();
+            break;
+          case mode_explosion:
+            explosion();
+            break;
+          case mode_gradient:
+            gradient(is_tree);
+            break;
+          case mode_meteor:
+            meteor(is_tree);
+            break;
+          case mode_pattern1:
+            pattern1();
+            break;
+          case mode_normal:
+            normal(current_colors);
+            break;
+          case mode_flicker:
+            flicker(current_colors);
+            break;
+          case mode_confetti:
+            confetti();
+            break;
+          case mode_breathe:
             breathe();
-          }
-          break;
-        case mode_solid:
-          if (use_patterns) {
-            render_with_pattern_system();
-          } else {
+            break;
+          case mode_solid:
             solid(current_colors);
-          }
-          break;
+            break;
+        }
       }
     } else {
       off();
@@ -4161,6 +4242,9 @@ void cmd_pattern_set(CommandEnvironment &env) {
             set_light_mode(mode_breathe);
         }
         
+        // Save pattern state to preferences
+        save_pattern_state();
+        
         env.cout.printf("Activated pattern: %s\n", pattern->get_name());
     } else {
         env.cerr.printf("Unknown pattern: %s\n", pattern_name);
@@ -4314,6 +4398,9 @@ void cmd_pattern_param(CommandEnvironment &env) {
         }
         env.cout.printf("Set %s = %d\n", param_name, value);
     }
+    
+    // Save pattern state after any parameter change
+    save_pattern_state();
 }
 
 // Reset active pattern to defaults and restore warm white color
@@ -4330,6 +4417,9 @@ void cmd_pattern_reset(CommandEnvironment &env) {
     // Reset global colors to warm white
     global_colors[0] = Color(0xFF, 0xA5, 0x00);
     global_color_count = 1;
+    
+    // Save reset state
+    save_pattern_state();
     
     env.cout.println("Pattern reset to defaults: warm white (#FFA500)");
 }
