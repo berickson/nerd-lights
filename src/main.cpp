@@ -120,7 +120,6 @@ int global_color_count = 1;
 int global_brightness = 100; // 0-100%, applied as post-processing
 
 // Forward declarations for functions defined after pattern classes
-void set_program(JsonDocument & doc);
 void cmd_pattern_list(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
@@ -232,6 +231,11 @@ LightMode string_to_light_mode(const char * s) {
 LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
 uint8_t brightness = 50;
+
+// Forward declarations for functions that need LightMode
+void set_light_mode(LightMode mode);
+void turn_on();
+void save_pattern_state();
 
 // breathe pattern variables
 uint32_t breathe_cycle_start_ms = 0;
@@ -1663,68 +1667,141 @@ void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
   schedule_restart(500);
 }
 
+// Get current pattern state as JSON (pattern-only version)
 void get_program_json(ArduinoJson::JsonObject & program)
 {
-  if (use_patterns) {
-    // Pattern mode - output current pattern state from pattern registry
-    program["mode"] = "pattern";
+  // Pattern mode - output current pattern state from pattern registry
+  program["mode"] = "pattern";
+  
+  PatternBase* active = pattern_registry.get_active_pattern();
+  if (active) {
+    program["pattern_name"] = active->get_name();
     
-    PatternBase* active = pattern_registry.get_active_pattern();
-    if (active) {
-      program["pattern_name"] = active->get_name();
-      
-      // Create parameters object
-      JsonObject parameters = program.createNestedObject("parameters");
-      
-      // Add colors array
-      JsonArray colors_array = parameters.createNestedArray("colors");
-      for (int i = 0; i < global_color_count; i++) {
-        char hex[8];
-        snprintf(hex, sizeof(hex), "#%02X%02X%02X", 
-                 global_colors[i].r, global_colors[i].g, global_colors[i].b);
-        colors_array.add(hex);
-      }
-      
-      // Add brightness
-      parameters["brightness"] = global_brightness;
-      
-      // Add pattern-specific parameters
-      auto local_params = active->get_local_parameters();
-      for (const auto& param : local_params) {
-        parameters[param.name] = active->get_parameter_int(param.name);
-      }
+    // Create parameters object
+    JsonObject parameters = program.createNestedObject("parameters");
+    
+    // Add colors array
+    JsonArray colors_array = parameters.createNestedArray("colors");
+    for (int i = 0; i < global_color_count; i++) {
+      char hex[8];
+      snprintf(hex, sizeof(hex), "#%02X%02X%02X", 
+               global_colors[i].r, global_colors[i].g, global_colors[i].b);
+      colors_array.add(hex);
     }
-  } else {
-    // Legacy mode - output legacy format
-    program["light_mode"] = light_mode_name(light_mode);
-    program["brightness"] = brightness;
-    program["saturation"] = saturation;
-    program["cycles"] = cycles;
-    program["speed"] = speed;
-
-    JsonArray colors_array = program.createNestedArray("colors");
-    for (int i = 0; i < unscaled_colors.size(); ++i)
-    {
-      Color c = unscaled_colors[i];
-      auto color_json = colors_array.createNestedObject();
-      color_json["r"] = c.r;
-      color_json["g"] = c.g;
-      color_json["b"] = c.b;
+    
+    // Add brightness
+    parameters["brightness"] = global_brightness;
+    
+    // Add pattern-specific parameters
+    auto local_params = active->get_local_parameters();
+    for (const auto& param : local_params) {
+      parameters[param.name] = active->get_parameter_int(param.name);
     }
   }
 }
 
-
-void cmd_get_program(CommandEnvironment & env) {
-  Serial.println("cmd_get_program");
-  Stream & o = env.cout;
-  auto & doc = shared_json_output_doc;
-  doc.clear();
-  ArduinoJson::JsonObject program = doc.to<ArduinoJson::JsonObject>();
-  get_program_json(program);
-
-  //serializeJsonPretty(doc, o);
-  serializeJson(doc, o);
+// Set pattern from JSON (pattern-only version)
+void set_program(JsonDocument & doc) {
+  // Always use pattern system
+  use_patterns = true;
+  
+  // Get pattern name
+  auto pattern_name = doc["pattern_name"];
+  if (pattern_name.is<const char *>()) {
+    const char* name = pattern_name.as<const char *>();
+    Serial.printf("Setting pattern: %s\n", name);
+    
+    // Store pattern name for actuals
+    last_pattern_name = String(name);
+    
+    // Store parameters for actuals (deep copy)
+    last_pattern_parameters.clear();
+    auto parameters = doc["parameters"];
+    if (!parameters.isNull()) {
+      last_pattern_parameters.set(parameters);
+    }
+    
+    // Activate the pattern
+    PatternBase* pattern = pattern_registry.get_pattern_by_name_case_insensitive(name);
+    if (pattern) {
+      pattern_registry.set_active_pattern(pattern->get_name());
+      
+      // Set corresponding light mode for the pattern
+      if (strcmp(pattern->get_name(), "Solid") == 0) {
+        set_light_mode(mode_solid);
+      } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
+        set_light_mode(mode_breathe);
+      }
+      
+      // Apply parameters if provided
+      auto parameters = doc["parameters"];
+      if (!parameters.isNull()) {
+        // Handle colors (special case - array of hex strings)
+        auto colors = parameters["colors"].as<JsonArray>();
+        if (!colors.isNull() && colors.size() > 0) {
+          global_color_count = 0;
+          for (JsonVariant color_variant : colors) {
+            if (color_variant.is<const char *>() && global_color_count < 10) {
+              const char* hex = color_variant.as<const char *>();
+              if (hex[0] == '#' && strlen(hex) >= 7) {
+                unsigned int r, g, b;
+                if (sscanf(hex + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+                  global_colors[global_color_count].r = r;
+                  global_colors[global_color_count].g = g;
+                  global_colors[global_color_count].b = b;
+                  global_color_count++;
+                }
+              }
+            }
+          }
+          Serial.printf("Set %d colors\n", global_color_count);
+        }
+        
+        // Handle all integer parameters
+        JsonObject params_obj = parameters.as<JsonObject>();
+        for (JsonPair kv : params_obj) {
+          const char* key = kv.key().c_str();
+          JsonVariant value = kv.value();
+          
+          // Skip colors array (already handled above)
+          if (strcmp(key, "colors") == 0) {
+            continue;
+          }
+          
+          // Handle brightness as global parameter
+          if (strcmp(key, "brightness") == 0 && value.is<int>()) {
+            int brightness_value = value.as<int>();
+            if (brightness_value >= 0 && brightness_value <= 100) {
+              global_brightness = brightness_value;
+              Serial.printf("Set global brightness = %d\n", brightness_value);
+            } else {
+              Serial.printf("Error: brightness must be 0-100, got %d\n", brightness_value);
+            }
+            continue;
+          }
+          
+          // Set integer parameters (pattern-specific)
+          if (value.is<int>()) {
+            int int_value = value.as<int>();
+            const char* error = pattern->set_parameter_int(key, int_value);
+            if (error == nullptr) {
+              Serial.printf("Set %s = %d\n", key, int_value);
+            } else {
+              Serial.printf("Error setting %s: %s\n", key, error);
+            }
+          }
+        }
+      }
+      
+      turn_on();
+      Serial.printf("Pattern activated: %s\n", pattern->get_name());
+      
+      // Save the pattern state to preferences
+      save_pattern_state();
+    } else {
+      Serial.printf("ERROR: Unknown pattern: %s\n", name);
+    }
+  }
 }
 
 
@@ -2222,212 +2299,7 @@ void add_color(Color color) {
   calculate_scaled_colors();
 }
 
-void set_program(JsonDocument & doc) {
-  // Check for new pattern mode format
-  auto mode = doc["mode"];
-  if (mode.is<const char *>() && strcmp(mode.as<const char *>(), "pattern") == 0) {
-    // New pattern system format
-    Serial.println("Activating pattern system mode");
-    use_patterns = true;
-    
-    // Get pattern name
-    auto pattern_name = doc["pattern_name"];
-    if (pattern_name.is<const char *>()) {
-      const char* name = pattern_name.as<const char *>();
-      Serial.printf("Setting pattern: %s\n", name);
-      
-      // Store pattern name for actuals
-      last_pattern_name = String(name);
-      
-      // Store parameters for actuals (deep copy)
-      last_pattern_parameters.clear();
-      auto parameters = doc["parameters"];
-      if (!parameters.isNull()) {
-        last_pattern_parameters.set(parameters);
-      }
-      
-      // Activate the pattern
-      PatternBase* pattern = pattern_registry.get_pattern_by_name_case_insensitive(name);
-      if (pattern) {
-        pattern_registry.set_active_pattern(pattern->get_name());
-        
-        // Set corresponding light mode for the pattern
-        if (strcmp(pattern->get_name(), "Solid") == 0) {
-          set_light_mode(mode_solid);
-        } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
-          set_light_mode(mode_breathe);
-        }
-        
-        // Apply parameters if provided
-        auto parameters = doc["parameters"];
-        if (!parameters.isNull()) {
-          // Handle colors (special case - array of hex strings)
-          auto colors = parameters["colors"].as<JsonArray>();
-          if (!colors.isNull() && colors.size() > 0) {
-            global_color_count = 0;
-            for (JsonVariant color_variant : colors) {
-              if (color_variant.is<const char *>() && global_color_count < 10) {
-                const char* hex = color_variant.as<const char *>();
-                if (hex[0] == '#' && strlen(hex) >= 7) {
-                  unsigned int r, g, b;
-                  if (sscanf(hex + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
-                    global_colors[global_color_count].r = r;
-                    global_colors[global_color_count].g = g;
-                    global_colors[global_color_count].b = b;
-                    global_color_count++;
-                  }
-                }
-              }
-            }
-            Serial.printf("Set %d colors\n", global_color_count);
-          }
-          
-          // Handle all integer parameters
-          JsonObject params_obj = parameters.as<JsonObject>();
-          for (JsonPair kv : params_obj) {
-            const char* key = kv.key().c_str();
-            JsonVariant value = kv.value();
-            
-            // Skip colors array (already handled above)
-            if (strcmp(key, "colors") == 0) {
-              continue;
-            }
-            
-            // Handle brightness as global parameter
-            if (strcmp(key, "brightness") == 0 && value.is<int>()) {
-              int brightness_value = value.as<int>();
-              if (brightness_value >= 0 && brightness_value <= 100) {
-                global_brightness = brightness_value;
-                Serial.printf("Set global brightness = %d\n", brightness_value);
-              } else {
-                Serial.printf("Error: brightness must be 0-100, got %d\n", brightness_value);
-              }
-              continue;
-            }
-            
-            // Set integer parameters (pattern-specific)
-            if (value.is<int>()) {
-              int int_value = value.as<int>();
-              const char* error = pattern->set_parameter_int(key, int_value);
-              if (error == nullptr) {
-                Serial.printf("Set %s = %d\n", key, int_value);
-              } else {
-                Serial.printf("Error setting %s: %s\n", key, error);
-              }
-            }
-          }
-        }
-        
-        turn_on();
-        Serial.printf("Pattern activated: %s\n", pattern->get_name());
-        
-        // Save the pattern state to preferences
-        save_pattern_state();
-      } else {
-        Serial.printf("ERROR: Unknown pattern: %s\n", name);
-      }
-    }
-    return;
-  }
-  
-  // Legacy program format - disable pattern system
-  use_patterns = false;
-  last_pattern_name = "";
-  last_pattern_parameters.clear();
-  
-  auto new_light_mode = doc["light_mode"];
-  if(new_light_mode.is<int>()) {
-    set_light_mode((LightMode)new_light_mode.as<int>());
-  }
 
-  if(new_light_mode.is<const char *>()) {
-    set_light_mode(string_to_light_mode(new_light_mode.as<const char *>()));
-  }
-
-  auto new_brightness = doc["brightness"];
-  if(new_brightness.is<float>()) {
-    set_brightness(new_brightness.as<float>());
-  }
-
-  auto new_saturation = doc["saturation"];
-  if(new_brightness.is<int>()) {
-    set_saturation(new_saturation.as<int>());
-  } else {
-    set_saturation(255);
-  }
-
-  auto new_cycles = doc["cycles"];
-  if(new_cycles.is<float>()) {
-    set_cycles(new_cycles.as<float>());
-  }
-
-  auto new_speed = doc["speed"];
-  if(new_speed.is<float>()) {
-    set_speed(new_speed.as<float>());
-  } else {
-    set_speed(0.0);
-  }
-
-
-  // print out doc["colors"]
-  // Serial.printf("doc[\"colors\"] = %s\n", doc["colors"].as<String>.c_str());
-
-  auto new_colors = doc["colors"].as<JsonArray>();
-  if(!new_colors.isNull() && new_colors.size() > 0) {
-    Serial.printf("setting %d colors\n", new_colors.size());
-    unscaled_colors.clear();
-    for(JsonObject o : new_colors) {
-      Color c;
-      c.r = o["r"]; // will default to zero if doesn't exist
-      c.g = o["g"]; // will default to zero if doesn't exist
-      c.b = o["b"]; // will default to zero if doesn't exist
-      add_color(c);
-    }
-  }
-  
-  // Save the legacy program state to preferences
-  save_pattern_state();
-}
-
-
-void cmd_set_program(CommandEnvironment & env) {
-  if (env.args.getParamCount() != 1) {
-    env.cout.printf("Failed - requires a single parameter for json document without whitespace");
-    return;
-  }
-
-  auto & doc = shared_json_input_doc;
-  doc.clear();
-  String doc_string = env.args.getCmdParam(1);
-  auto error = deserializeJson(doc, doc_string);
-
-  if(error) {
-    env.cerr.println("could not parse json");
-    env.cerr.println(doc_string);
-    env.cerr.println(error.c_str());
-  } else {
-    set_program(doc);
-
-    serializeJsonPretty(doc, env.cout);
-    publish_program();
-  }
-}
-
-void cmd_explosion(CommandEnvironment &env) { set_light_mode(mode_explosion); turn_on();}
-void cmd_confetti(CommandEnvironment &env) { set_light_mode(mode_confetti); turn_on();}
-void cmd_pattern1(CommandEnvironment &env) { set_light_mode(mode_pattern1); turn_on();}
-void cmd_gradient(CommandEnvironment &env) { set_light_mode(mode_gradient); turn_on();}
-void cmd_meteor(CommandEnvironment &env) { set_light_mode(mode_meteor); turn_on();}
-void cmd_rainbow(CommandEnvironment &env) { set_light_mode(mode_rainbow); turn_on();}
-void cmd_strobe(CommandEnvironment &env) { set_light_mode(mode_strobe); turn_on();}
-void cmd_twinkle(CommandEnvironment &env) { set_light_mode(mode_twinkle); turn_on();}
-void cmd_normal(CommandEnvironment &env) { set_light_mode(mode_normal); turn_on();}
-void cmd_solid(CommandEnvironment &env) { 
-  use_patterns = false;  // Use legacy rendering
-  set_light_mode(mode_solid); 
-  turn_on();
-}
-void cmd_flicker(CommandEnvironment &env) { set_light_mode(mode_flicker); turn_on();}
 void cmd_breathe(CommandEnvironment &env) { 
   use_patterns = false;  // Use legacy rendering
   breathe_cycle_start_ms = 0;  // Reset cycle on mode change
@@ -2462,10 +2334,6 @@ void cmd_color(CommandEnvironment &env) {
       global_colors[i] = unscaled_colors[i];
     }
   }
-}
-
-void cmd_stripes(CommandEnvironment & env) {
-  set_light_mode(mode_stripes);
 }
 
 void cmd_brightness(CommandEnvironment &env) {
@@ -2870,19 +2738,6 @@ void setup() {
       Command{"status", cmd_status, "displays current device status information"});
   commands.emplace_back(Command{"enablewifi", cmd_set_enable_wifi, "on/off"});
 
-  commands.emplace_back(
-      Command{"explosion", cmd_explosion, "colored explosions"});
-  commands.emplace_back(
-    Command{"confetti", cmd_confetti, "confetti like effect"});
-  commands.emplace_back(
-      Command{"pattern1", cmd_pattern1, "lights chase at different rates"});
-  commands.emplace_back(
-      Command{"gradient", cmd_gradient, "gradual blending of chosen colors"});
-  commands.emplace_back(
-      Command{"meteor", cmd_meteor, "blended pairs of colors, look like meteors when chasing"});
-  commands.emplace_back(Command{"rainbow", cmd_rainbow, "rainbow road"});
-  commands.emplace_back(Command{"strobe", cmd_strobe, "flashes whole strand at once"});
-  commands.emplace_back(Command{"twinkle", cmd_twinkle, "twinkle random lights"});
   commands.emplace_back(Command{"saturation", cmd_saturation,
                                 "set saturation 0-255 for rainbow effect"});
   commands.emplace_back(Command{"brightness", cmd_brightness,
@@ -2897,9 +2752,6 @@ void setup() {
               "speed of effect,  1.0 would mean moving entire strip once per "
               "second, 2.0 would do it twice per second"});
   commands.emplace_back(Command{"is_tree", cmd_set_tree_mode, "set to true if lights are on a tree, makes stripes same width bottom to top"});
-  commands.emplace_back(Command{"normal", cmd_normal, "colors are repeated through the strand"});
-  commands.emplace_back(Command{"solid", cmd_solid, "solid colors with configurable spacing (alias for normal)"});
-  commands.emplace_back(Command{"flicker", cmd_flicker, "flicker like a candle"});
   commands.emplace_back(Command{"breathe", cmd_breathe, "smooth breathing effect with sine wave"});
   commands.emplace_back(Command{"duration", cmd_duration, "set duration in milliseconds for breathe pattern (100-60000)"});
   commands.emplace_back(Command{"spacing", cmd_spacing, "set spacing in pixels for solid pattern (1-100)"});
@@ -2908,9 +2760,6 @@ void setup() {
   commands.emplace_back(
       Command("add", cmd_add_color,
               "adds a color to current pallet {red} {blue} {green}"));
-  commands.emplace_back(
-      Command("stripes", cmd_stripes,
-              "stripes based on the current colors"));
   commands.emplace_back(Command("ledcount", cmd_set_led_count,
                                 "sets the total number of leds on the strand"));
   commands.emplace_back(Command{"next", cmd_next, "cycles to the next mode"});
@@ -2926,11 +2775,6 @@ void setup() {
   commands.emplace_back(
     Command{"scan_networks", cmd_scan_networks, "returns json describing network status"});
 
-  commands.emplace_back(
-    Command{"get_program", cmd_get_program, "returns json for the current program"});
-
-  commands.emplace_back(
-    Command{"set_program", cmd_set_program, "sets the program from a single line json doc without whitespace"});
   commands.emplace_back(
     Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
   commands.emplace_back(
@@ -3082,111 +2926,9 @@ double percent_up_tree_for_percent_lights(double l) {
 }
 
 
-void gradient(bool is_tree = true) {
-
-  size_t n_colors =  current_colors.size();
-  float stretch = n_colors < 2 ? 1.0 : (float)(n_colors-1) / (n_colors);
-  double shift_left = -1.0 * speed * millis() / 1000. * led_count;
-  RepeatingPattern p(led_count, n_colors, stretch, shift_left);
-  for(int i = 0; i<led_count; ++i) {
-    auto r = p.segment_percent(i);
-    if(r.segment >= n_colors) {
-      Serial.printf("Invalid segment r.segment: %d n_colors: %d\n", r.segment, n_colors);
-    }
-    Color color_a = current_colors[r.segment];
-    Color color_b = current_colors[(r.segment+1)%n_colors];
-    Color color = mix_colors(color_a, color_b, r.percent);
-    leds[i] = color;
-  }
-}
-
 // percent is visual and goes [0,1]
 float gamma_percent(float percent, float gamma = 2.8) {
   return powf(percent, gamma);
-}
-
-void meteor(bool is_tree = true) {
-  size_t n_colors =  current_colors.size();
-  int divisions = n_colors;
-  int division = 1;
-  double division_start = 0;
-  double percent = (double)division/divisions;
-  double division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
-
-  //double lights_per_division = (double) led_count / (n_colors < 2 ? 1 : n_colors-1);
-  for(int i = 0; i<led_count; ++i) {
-    if(i>division_end) {
-      ++division;
-      division_start = division_end;
-      percent = (double)division/divisions;
-      division_end = led_count * (is_tree ? percent_lights_for_percent_up_tree(percent) : percent);
-    }
-    Color color_a = current_colors[division-1];
-    //Color color_b = Color(0,0,0);
-    float percent = 1-(i-division_start)/(division_end-division_start);
-    float part_a = gamma_percent(percent);
-    Color color(color_a.r * part_a, color_a.g*part_a, color_a.b*part_a);
-    leds[i]=color;
-  }
-}
-
-
-void pattern1() {
-  auto ms = clock_millis();
-  // strip.clear();
-  // step through the LEDS, and update the colors as needed
-  for (int i = 0; i < led_count; i++) {
-    Color  c = current_colors[0];
-    // use ints to allow overflow, will clamp at end
-    int r = c.r;
-    int g = c.g;
-    int b = c.b;
-    if (current_colors.size() >= 2 && (ms / 1000) % led_count == i) {
-      c = current_colors[1];
-      r += c.r;
-      g += c.g;
-      b += c.b;
-    }
-
-    if (current_colors.size() >= 3 && (ms / 20) % led_count == i) {
-      c = current_colors[2];
-      r += c.r;
-      g += c.g;
-      b += c.b;
-    }
-    if (current_colors.size() >= 4 && (ms / 30) % led_count == i) {
-      c = current_colors[3];
-      r += c.r;
-      g += c.g;
-      b += c.b;
-    }
-    if (current_colors.size() >= 5 && (ms / 40) % led_count == i) {
-      c = current_colors[4];
-      r += c.r;
-      g += c.g;
-      b += c.b;
-    }
-    if (current_colors.size() >= 6 && (ms / 35) % led_count == led_count - i) {
-      c = current_colors[5];
-      r += c.r;
-      g += c.g;
-      b += c.b;
-    }
-
-    // clamp colors to 255 while maintaining hue
-    int max_c = max(r,max(g,b));
-    if(max_c > 255) {
-      c.r = r * 255. / max_c;
-      c.g = g * 255. / max_c;
-      c.b = b * 255. / max_c;
-    } else {
-      c.r = r;
-      c.g = g;
-      c.b = b;
-    }
-
-    leds[i]=c;
-  }
 }
 
 
@@ -3240,18 +2982,19 @@ Color HSVtoRGB(float h, float s, float v) {
   return Color(r*255,g*255,b*255);
 }
 
-void rainbow() {
-  // uses speed and cycles
-  auto ms = clock_millis();
-  double offset = -1.0 * speed * ms / 1000. * led_count;
-
-  double ratio = cycles / led_count;
-  for (int i = 0; i < led_count; ++i) {
-    float hue = fabs(fmod((i + offset) * ratio * 360, 360.));  // 0-360
-    auto color = HSVtoRGB(hue, saturation/255., brightness/255.);
-    leds[i]=color;
-  }
-}
+// PRESERVED: Will be converted to RainbowPattern class
+// void rainbow() {
+//   // uses speed and cycles
+//   auto ms = clock_millis();
+//   double offset = -1.0 * speed * ms / 1000. * led_count;
+// 
+//   double ratio = cycles / led_count;
+//   for (int i = 0; i < led_count; ++i) {
+//     float hue = fabs(fmod((i + offset) * ratio * 360, 360.));  // 0-360
+//     auto color = HSVtoRGB(hue, saturation/255., brightness/255.);
+//     leds[i]=color;
+//   }
+// }
 
 void rotate() {
   auto ms = clock_millis();
@@ -3281,26 +3024,6 @@ void rotate() {
 
 const Color black = {0,0,0};
 
-void strobe() {
-  // uses speed and cycles
-  auto ms = clock_millis();
-  
-  bool multi = current_colors.size() >= 2;
-  
-  int n  = floor( (ms * (double)speed) / 1000.0);
-
-  uint32_t color = Color(0,0,0);
-  if(multi) {
-    color = current_colors[n%current_colors.size()];
-  } else {
-    color = (n%2==0)?black:current_colors[0];
-  }
-
-   for (int i = 0; i < led_count; ++i) {
-    leds[i]=color;
-  }
-}
-
 Color color_at_brightness( Color color , uint8_t new_brightness) {
   Color c = color;
   uint32_t max_c = max<uint8_t>(max<uint8_t>(c.r,c.g),c.b);
@@ -3310,82 +3033,6 @@ Color color_at_brightness( Color color , uint8_t new_brightness) {
     c.b = mul_div(c.b, new_brightness, max_c);
   }
   return c;
-}
-
-void twinkle() {
-  uint32_t ms = clock_millis();
-  static double next_ms = 0;
-
-  if(ms - next_ms > 1000) {
-    next_ms = ms;
-  };
-
-  struct blinking_led_t {
-    uint16_t led_number;
-    uint32_t done_ms;
-    uint32_t twinkle_color;
-  };
-
-  // static std::deque<blinking_led_t> blinking_leds;
-  static blinking_led_t arr[100];
-  static nonstd::ring_span<blinking_led_t> blinking_leds( arr, arr + dim(arr), arr, 0);
-  
-  // about 10% of the lights are twinkling at any time
-  float ratio_twinkling = .1;
-  uint32_t average_twinkling_count = led_count * ratio_twinkling;
-  uint32_t max_twinkling_count = dim(arr);//average_twinkling_count*2;
-
-  // twinkling takes 1 second
-  uint16_t twinkle_ms = 1000;
-  float average_ms_per_new_twinkle = (float)twinkle_ms / average_twinkling_count;
-
-  bool multi = current_colors.size() >= 2;
-  uint32_t base_color = multi ? current_colors[0] : black;
-
-  for(int i = 0; i < led_count; ++i) {
-    leds[i] = base_color;
-  }
-  
-  // remove done LEDS
-  while(blinking_leds.size() > 0 && blinking_leds.front().done_ms <= ms) {
-    blinking_leds.pop_front();
-  }
-
-  while(next_ms <= ms) {
-    // add a twinkling led to list
-    if(blinking_leds.size() < max_twinkling_count) {
-      
-      blinking_led_t led;
-      led.done_ms = ms+twinkle_ms;
-      led.led_number = rand() % led_count;
-      led.twinkle_color = multi ? current_colors[rand()% (current_colors.size()-1)+1] : current_colors[0];
-      bool already_blinking = false;
-      for(auto blinking : blinking_leds) {
-        if(blinking.led_number == led.led_number) {
-          already_blinking = true;
-        }
-      }
-      if(!already_blinking) {
-        blinking_leds.push_back(led);
-      }
-    }
-
-    // add random time to next_ms
-    double add_ms = frand() * 2 * average_ms_per_new_twinkle;
-    next_ms = next_ms + add_ms;
-  }
-
-  for(auto & led : blinking_leds) {
-    // time from midpoint peak
-    auto ms_peak = led.done_ms - twinkle_ms/2.;
-    auto from_peak = abs(ms-ms_peak);
-    auto level = 1. - from_peak / (twinkle_ms/2);
- 
-
-    uint32_t color = mix_colors(base_color, led.twinkle_color, level*level);
-    
-    leds[led.led_number]=color;
-  }
 }
 
 
@@ -3411,110 +3058,6 @@ Color add(Color c1, Color c2) {
 }
 
 
-
-void explosion() {
-  uint32_t ms = clock_millis();
-  static double next_ms = 0;
-
-  if(ms - next_ms > 1000) {
-    next_ms = ms;
-  };
-
-  struct explosion_t {
-    int16_t center_led_number;
-    int32_t start_ms;
-    int32_t explosion_color;
-    int8_t max_radius_in_leds;
-  };
-  const int32_t explosion_ms = 1000;
-
-  // static std::deque<blinking_led_t> blinking_leds;
-  static explosion_t arr[100];
-  static nonstd::ring_span<explosion_t> explosions( arr, arr + dim(arr), arr, 0);
-  
-  // about 10% of the lights are twinkling at any time
-  float ratio_exploding = .1;
-  uint32_t average_explosion_count = led_count * ratio_exploding;
-  uint32_t max_explosion_count = dim(arr);//average_twinkling_count*2;
-
-  // twinkling takes 1 second
-  float average_ms_per_new_explosion = (float)explosion_ms / average_explosion_count;
-
-  bool multi = current_colors.size() >= 2;
-  Color base_color = multi ? current_colors[0] : black;
-
-  for(int i = 0; i < led_count; ++i) {
-    leds[i]=base_color;
-  }
-  
-  // remove done explosions
-  while(explosions.size() > 0 && ms - explosions.front().start_ms > explosion_ms  ) {
-    explosions.pop_front();
-  }
-
-  while(next_ms <= ms) {
-    // add a explosion to list
-    if(explosions.size() < max_explosion_count) {
-      
-      explosion_t explosion;
-      explosion.center_led_number = rand() % led_count;
-      explosion.start_ms = ms;
-      explosion.explosion_color = current_colors[rand()%current_colors.size()];
-      explosion.max_radius_in_leds = 5 + rand() % 10;
-      explosions.push_back(explosion);
-    }
-
-    // add random time to next_ms
-    double add_ms = frand() * 2 * average_ms_per_new_explosion;
-    next_ms = next_ms + add_ms;
-  }
-
-  for(auto & explosion : explosions) {
-    Color color = color_at_brightness(explosion.explosion_color, brightness);
-    for (int x = - explosion.max_radius_in_leds; x <= explosion.max_radius_in_leds; ++x) {
-      auto distance = abs(x);
-      int i = explosion.center_led_number + x;
-      uint32_t elapsed_ms = ms - explosion.start_ms;
-
-      uint16_t radius_in_leds =
-          (uint64_t)explosion.max_radius_in_leds * elapsed_ms / explosion_ms;
-
-      float percent = (float)(explosion.max_radius_in_leds - radius_in_leds) *
-                      (explosion.max_radius_in_leds - radius_in_leds) /
-                      (explosion.max_radius_in_leds * explosion.max_radius_in_leds);
-
-      if(i>0 && i<led_count) {
-        if (abs(distance - radius_in_leds) < 2) {
-          leds[i] =  mix_colors(leds[i], color, percent);
-        }
-      }
-    }
-  }
-}
-
-void confetti() {
-  uint32_t ms = clock_millis();
-  static double next_ms = 0;
-
-  for(int i=0; i<led_count; ++i) {
-    // fade the led
-    leds[i].r *= 0.95;
-    leds[i].g *= 0.95;
-    leds[i].b *= 0.95;
-
-    // randomly set a color
-    if( rand() % 15 == 0 ) {
-      Color c1 = leds[i];
-      Color c2 = current_colors[rand()%current_colors.size()];
-      Color c3;
-      c3.r = qadd8(c1.r,c2.r);
-      c3.g = qadd8(c1.g,c2.g);
-      c3.b = qadd8(c1.b,c2.b);
-
-      leds[i] = c3;
-    }
-  }
-}
 
 void breathe() {
   uint32_t ms = clock_millis();
@@ -3576,58 +3119,11 @@ void breathe() {
 }
 
 
-void stripes(const std::vector<Color> & colors, bool is_tree = false) {
-  auto ms = clock_millis();
-  
-  double start_color = -1.0 * speed * ms / 1000. * colors.size();
-  for (int i = 0; i < led_count; ++i) {
-    auto f = (double)i/led_count;
-    auto p = is_tree?percent_up_tree_for_percent_lights((double)i/led_count) : f;
-    auto n_color = int(start_color + p * colors.size() * cycles)%colors.size();
-    leds[i]=colors[n_color];
-  }
-
-}
-
-void normal(const std::vector<Color> & colors, uint16_t repeat_count = 1) {
-  for (int i = 0; i < led_count; ++i) {
-    auto color = colors[(i / repeat_count) % colors.size()];
-    leds[i] = color;
-  }
-}
-
 // Solid pattern - displays colors with configurable spacing
 void solid(const std::vector<Color> & colors) {
   for (int i = 0; i < led_count; ++i) {
     auto color = colors[(i / pattern_spacing) % colors.size()];
     leds[i] = color;
-  }
-}
-
-void flicker(const std::vector<Color> & colors) {
-  for (int i = 0; i < led_count; ++i) {
-    if(rand()%5==0) {
-
-      // if( random(500) !=0)  continue;// individual lights to blink at different rates
-
-      // add up contribution from each color
-      int r = 0;
-      int g = 0;
-      int b = 0;
-      for(Color c : colors) {
-        auto level =random(50,100);
-        // auto level = 100;
-        r += c.r * level;
-        g += c.g * level;
-        b += c.b * level;
-      }
-      r /= 100*colors.size();
-      g /= 100*colors.size();
-      b /= 100*colors.size();
-
-      leds[i]=Color(r,g,b);
-
-    }
   }
 }
 
@@ -4010,61 +3506,10 @@ Below stuff would be good for a config page
     // }
 
     if(lights_on) {
-      // Use pattern system if enabled, regardless of light_mode
-      if (use_patterns) {
-        render_with_pattern_system();
-      } else {
-        // Legacy rendering based on light_mode
-        switch (light_mode) {
-
-          case mode_rainbow:
-            rainbow();
-            break;
-          case mode_strobe:
-            strobe();
-            break;
-          case mode_stripes:
-            stripes(current_colors, is_tree);
-            break;
-          case mode_twinkle:
-            twinkle();
-            break;
-          case mode_explosion:
-            explosion();
-            break;
-          case mode_gradient:
-            gradient(is_tree);
-            break;
-          case mode_meteor:
-            meteor(is_tree);
-            break;
-          case mode_pattern1:
-            pattern1();
-            break;
-          case mode_normal:
-            normal(current_colors);
-            break;
-          case mode_flicker:
-            flicker(current_colors);
-            break;
-          case mode_confetti:
-            confetti();
-            break;
-          case mode_breathe:
-            breathe();
-            break;
-          case mode_solid:
-            solid(current_colors);
-            break;
-        }
-      }
+      // Use pattern system
+      render_with_pattern_system();
     } else {
       off();
-    }
-
-    // rotate
-    if(light_mode != mode_rainbow && light_mode != mode_stripes && light_mode != mode_gradient) {
-      rotate();
     }
 
     // enforce current limit
