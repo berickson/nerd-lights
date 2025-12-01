@@ -177,78 +177,10 @@ Color mix_colors(Color c1, Color c2, float part2) {
 }
 
 
-// =============================================================================
-// LEGACY CODE - TO BE REMOVED
-// =============================================================================
-// The following LightMode enum and related functions are NO LONGER USED.
-// The controller now uses pattern format for ALL MQTT communication:
-//   - get_program_json() outputs: {"mode":"pattern", "pattern_name":"...", "parameters":{...}}
-//   - set_program() parses: {"pattern_name":"...", "parameters":{...}}
-//
-// This legacy code remains only because:
-//   1. set_light_mode() is still called in a few places (can be removed)
-//   2. Preferences still store light_mode (can be removed)
-//   3. Historical caution (can be removed)
-//
-// TODO: Remove this entire section - it serves no purpose.
-// =============================================================================
-
-// DEAD CODE - Not used in MQTT protocol, can be deleted
-enum LightMode {
-  mode_explosion,
-  mode_pattern1,
-  mode_gradient,
-  mode_rainbow,
-  mode_strobe,
-  mode_twinkle,
-  mode_stripes,
-  mode_normal,
-  mode_flicker,
-  mode_meteor,
-  mode_confetti,
-  mode_breathe,
-  mode_solid,
-  mode_last = mode_solid
-};
-
-LightMode string_to_light_mode(const char * s) {
-  if(strcmp(s, "explosion") == 0) {
-    return mode_explosion;
-  } else if(strcmp(s, "pattern1") == 0) {
-    return mode_pattern1;
-  } else if(strcmp(s, "gradient") == 0) {
-    return mode_gradient;
-  } else if(strcmp(s, "rainbow") == 0) {
-    return mode_rainbow;
-  } else if(strcmp(s, "strobe") == 0) {
-    return mode_strobe;
-  } else if(strcmp(s, "twinkle") == 0) {
-    return mode_twinkle;
-  } else if(strcmp(s, "stripes") == 0) {
-    return mode_stripes;
-  } else if(strcmp(s, "normal") == 0) {
-    return mode_normal;
-  } else if(strcmp(s, "solid") == 0) {
-    return mode_solid;
-  } else if(strcmp(s, "flicker") == 0) {
-    return mode_flicker;
-  } else if(strcmp(s, "meteor") == 0) {
-    return mode_meteor;
-  } else if(strcmp(s, "confetti") == 0) {
-    return mode_confetti;
-  } else if(strcmp(s, "breathe") == 0) {
-    return mode_breathe;
-  }
-  return mode_rainbow;
-}
-
-// DEAD CODE - Not used in MQTT protocol
-LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
 uint8_t brightness = 50;
 
-// Forward declarations for functions that need LightMode
-void set_light_mode(LightMode mode);
+// Forward declarations
 void turn_on();
 void save_pattern_state();
 
@@ -266,50 +198,6 @@ std::vector<Color> current_colors = {Color(15, 15, 15)};
 // define commands
 ////////////////////////////////
 
-
-const char * light_mode_name(LightMode mode) {
-  switch (mode) {
-    case mode_explosion:
-      return "explosion";
-    
-    case mode_pattern1:
-      return "pattern1";
-
-    case mode_gradient:
-      return "gradient";
-
-    case mode_meteor:
-      return "meteor";
-
-    case mode_rainbow:
-      return "rainbow";
-
-    case mode_strobe:
-      return "strobe";
-
-    case mode_twinkle:
-      return "twinkle";
-
-    case mode_stripes:
-      return "stripes";
-
-    case mode_normal:
-      return "normal";
-
-    case mode_flicker:
-      return "flicker";
-
-    case mode_confetti:
-      return "confetti";
-
-    case mode_breathe:
-      return "breathe";
-
-    case mode_solid:
-      return "solid";
-  }
-  return "mode_not_found";
-}
 
 ////////////////////////////////////////////
 // ====== PATTERN SYSTEM CLASSES ======
@@ -1741,13 +1629,6 @@ void set_program(JsonDocument & doc) {
     if (pattern) {
       pattern_registry.set_active_pattern(pattern->get_name());
       
-      // Set corresponding light mode for the pattern
-      if (strcmp(pattern->get_name(), "Solid") == 0) {
-        set_light_mode(mode_solid);
-      } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
-        set_light_mode(mode_breathe);
-      }
-      
       // Apply parameters if provided
       auto parameters = doc["parameters"];
       if (!parameters.isNull()) {
@@ -1831,11 +1712,6 @@ void cmd_status(CommandEnvironment &env)
   o.println("\",");
 
   o.print("\"firmware_version\":\"" __DATE__ " " __TIME__ );
-  o.println("\",");
-
-
-  o.print("\"light_mode\":\"");
-  o.print(light_mode_name(light_mode));
   o.println("\",");
 
   o.print("\"brightness\":");
@@ -2258,15 +2134,6 @@ void toggle_on_off() {
   }
 }
 
-// DEAD CODE - Can be removed (light_mode not used in get_program_json anymore)
-void set_light_mode(LightMode mode) {
-  Serial.printf("set_light_mode %d\n", mode);
-  light_mode = mode;
-  preferences.begin("main");
-  preferences.putInt("light_mode", (int)light_mode);
-  preferences.end();
-}
-
 void set_brightness(uint8_t new_brightness) {
   brightness = new_brightness;
   preferences.begin("main");
@@ -2316,12 +2183,6 @@ void add_color(Color color) {
 }
 
 
-void cmd_breathe(CommandEnvironment &env) { 
-  use_patterns = false;  // Use legacy rendering
-  breathe_cycle_start_ms = 0;  // Reset cycle on mode change
-  set_light_mode(mode_breathe); 
-  turn_on();
-}
 void cmd_off(CommandEnvironment &env) { turn_off(); }
 void cmd_on(CommandEnvironment &env) { turn_on(); }
 
@@ -2576,20 +2437,6 @@ void cmd_set_enable_wifi(CommandEnvironment &env) {
   preferences.end();
 }
 
-void cmd_next(CommandEnvironment &env) {
-  LightMode mode = (LightMode)(light_mode + 1);
-  if (mode > mode_last) {
-    mode = (LightMode)0;
-  }
-  set_light_mode(mode);
-}
-
-void cmd_previous(CommandEnvironment &env) {
-  LightMode mode =
-      (light_mode == 0) ? light_mode = mode_last : (LightMode)(light_mode - 1);
-  set_light_mode(mode);
-}
-
 void cmd_scan_networks(CommandEnvironment & env) {
 
   int n = WiFi.scanNetworks();
@@ -2730,7 +2577,6 @@ void setup() {
 #endif
 
   max_current = preferences.getInt("max_current", 500);
-  light_mode = (LightMode)preferences.getInt("light_mode", mode_rainbow);
   saturation = preferences.getInt("saturation", 200);
   brightness = preferences.getInt("brightness", 30);
   speed = preferences.getFloat("speed", 1.0);
@@ -2768,7 +2614,6 @@ void setup() {
               "speed of effect,  1.0 would mean moving entire strip once per "
               "second, 2.0 would do it twice per second"});
   commands.emplace_back(Command{"is_tree", cmd_set_tree_mode, "set to true if lights are on a tree, makes stripes same width bottom to top"});
-  commands.emplace_back(Command{"breathe", cmd_breathe, "smooth breathing effect with sine wave"});
   commands.emplace_back(Command{"duration", cmd_duration, "set duration in milliseconds for breathe pattern (100-60000)"});
   commands.emplace_back(Command{"spacing", cmd_spacing, "set spacing in pixels for solid pattern (1-100)"});
   commands.emplace_back(
@@ -2778,11 +2623,7 @@ void setup() {
               "adds a color to current pallet {red} {blue} {green}"));
   commands.emplace_back(Command("ledcount", cmd_set_led_count,
                                 "sets the total number of leds on the strand"));
-  commands.emplace_back(Command{"next", cmd_next, "cycles to the next mode"});
-
   commands.emplace_back(Command{"max_current", cmd_set_max_current, "sets maximum current draw in mA"});
-  commands.emplace_back(
-      Command{"previous", cmd_previous, "cycles to the previous mode"});
   commands.emplace_back(
       Command{"off", cmd_off, "turn lights off, device is still running"});
   commands.emplace_back(
@@ -3695,13 +3536,6 @@ void cmd_pattern_set(CommandEnvironment &env) {
         pattern_registry.set_active_pattern(pattern->get_name());
         use_patterns = true;  // Enable pattern rendering
         turn_on();
-        
-        // Set corresponding light mode for the pattern
-        if (strcmp(pattern->get_name(), "Solid") == 0) {
-            set_light_mode(mode_solid);
-        } else if (strcmp(pattern->get_name(), "Breathe") == 0) {
-            set_light_mode(mode_breathe);
-        }
         
         // Save pattern state to preferences
         save_pattern_state();
