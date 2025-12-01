@@ -177,9 +177,23 @@ Color mix_colors(Color c1, Color c2, float part2) {
 }
 
 
+// =============================================================================
+// LEGACY CODE - TO BE REMOVED
+// =============================================================================
+// The following LightMode enum and related functions are NO LONGER USED.
+// The controller now uses pattern format for ALL MQTT communication:
+//   - get_program_json() outputs: {"mode":"pattern", "pattern_name":"...", "parameters":{...}}
+//   - set_program() parses: {"pattern_name":"...", "parameters":{...}}
+//
+// This legacy code remains only because:
+//   1. set_light_mode() is still called in a few places (can be removed)
+//   2. Preferences still store light_mode (can be removed)
+//   3. Historical caution (can be removed)
+//
+// TODO: Remove this entire section - it serves no purpose.
+// =============================================================================
 
-
-// current lighting pattern selected for display
+// DEAD CODE - Not used in MQTT protocol, can be deleted
 enum LightMode {
   mode_explosion,
   mode_pattern1,
@@ -228,6 +242,7 @@ LightMode string_to_light_mode(const char * s) {
   return mode_rainbow;
 }
 
+// DEAD CODE - Not used in MQTT protocol
 LightMode light_mode = mode_rainbow;
 uint8_t saturation = 200;
 uint8_t brightness = 50;
@@ -2243,6 +2258,7 @@ void toggle_on_off() {
   }
 }
 
+// DEAD CODE - Can be removed (light_mode not used in get_program_json anymore)
 void set_light_mode(LightMode mode) {
   Serial.printf("set_light_mode %d\n", mode);
   light_mode = mode;
