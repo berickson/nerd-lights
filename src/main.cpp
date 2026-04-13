@@ -1383,6 +1383,41 @@ ChasePattern chase_pattern;
 LightningPattern lightning_pattern;
 PatternRegistry pattern_registry;
 
+// Per-segment program state (segment-aware multi-zone rendering)
+struct SegmentProgram {
+    PatternBase* pattern;   // heap-allocated independent instance
+    int start;              // 0-based index into leds[]
+    int count;
+    Color colors[10];
+    int color_count;
+    int brightness;         // 0-100
+};
+std::vector<SegmentProgram> active_segments;
+
+// Factory: allocate a fresh heap instance of the named pattern (case-insensitive)
+PatternBase* create_pattern_instance(const char* name) {
+    if (strcasecmp(name, "Solid") == 0)     return new SolidPattern();
+    if (strcasecmp(name, "Breathe") == 0)   return new BreathePattern();
+    if (strcasecmp(name, "Gradient") == 0)  return new GradientPattern();
+    if (strcasecmp(name, "Confetti") == 0)  return new ConfettiPattern();
+    if (strcasecmp(name, "Flicker") == 0)   return new FlickerPattern();
+    if (strcasecmp(name, "Twinkle") == 0)   return new TwinklePattern();
+    if (strcasecmp(name, "Explosion") == 0) return new ExplosionPattern();
+    if (strcasecmp(name, "Strobe") == 0)    return new StrobePattern();
+    if (strcasecmp(name, "Meteor") == 0)    return new MeteorPattern();
+    if (strcasecmp(name, "Chase") == 0)     return new ChasePattern();
+    if (strcasecmp(name, "Lightning") == 0) return new LightningPattern();
+    return nullptr;
+}
+
+// Free all heap-allocated segment pattern instances and clear the vector
+void free_active_segments() {
+    for (auto& seg : active_segments) {
+        delete seg.pattern;
+    }
+    active_segments.clear();
+}
+
 
 void update_pixels() {
   #if defined(use_fastled)
@@ -2044,8 +2079,92 @@ void handle_program_setpoint(byte* message, unsigned int length) {
   String message_id = doc["id"];
   
   if (message_id != last_actual_program_id) {
-    // Extract program data and apply using existing set_program function
-    if (doc.containsKey("program")) {
+    if (doc.containsKey("segments") && doc["segments"].is<JsonArray>()) {
+      // Multi-segment setpoint — each entry drives an independent pixel range
+      Serial.printf("Applying segment setpoint, id=%s\n", message_id.c_str());
+      free_active_segments();
+
+      JsonArray segments_json = doc["segments"].as<JsonArray>();
+      for (JsonObject seg_json : segments_json) {
+        if (!seg_json.containsKey("program") ||
+            !seg_json.containsKey("start_pixel") ||
+            !seg_json.containsKey("light_count")) {
+          Serial.println("Segment missing required fields, skipping");
+          continue;
+        }
+
+        JsonObject prog = seg_json["program"].as<JsonObject>();
+        if (!prog.containsKey("pattern_name")) {
+          Serial.println("Segment program missing pattern_name, skipping");
+          continue;
+        }
+
+        const char* pattern_name = prog["pattern_name"];
+        PatternBase* pat = create_pattern_instance(pattern_name);
+        if (!pat) {
+          Serial.printf("Unknown pattern '%s', skipping segment\n", pattern_name);
+          continue;
+        }
+
+        SegmentProgram seg;
+        seg.pattern    = pat;
+        seg.start      = seg_json["start_pixel"].as<int>();
+        seg.count      = seg_json["light_count"].as<int>();
+        seg.color_count = 0;
+        seg.brightness  = 100;
+
+        // Parse parameters
+        JsonObject params = prog["parameters"].as<JsonObject>();
+        if (!params.isNull()) {
+          // Colors array
+          JsonArray colors_json = params["colors"].as<JsonArray>();
+          if (!colors_json.isNull()) {
+            for (JsonVariant color_v : colors_json) {
+              if (color_v.is<const char*>() && seg.color_count < 10) {
+                const char* hex = color_v.as<const char*>();
+                if (hex[0] == '#' && strlen(hex) >= 7) {
+                  unsigned int r, g, b;
+                  if (sscanf(hex + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+                    seg.colors[seg.color_count].r = (uint8_t)r;
+                    seg.colors[seg.color_count].g = (uint8_t)g;
+                    seg.colors[seg.color_count].b = (uint8_t)b;
+                    seg.color_count++;
+                  }
+                }
+              }
+            }
+          }
+
+          // Brightness
+          if (params.containsKey("brightness")) {
+            seg.brightness = params["brightness"].as<int>();
+          }
+
+          // Pattern-specific local parameters
+          auto local_params = seg.pattern->get_local_parameters();
+          for (const auto& p : local_params) {
+            if (params.containsKey(p.name)) {
+              seg.pattern->set_parameter_int(p.name, params[p.name].as<int>());
+            }
+          }
+        }
+
+        // Default colour if none provided
+        if (seg.color_count == 0) {
+          seg.colors[0] = Color(0xFF, 0xA5, 0x00);
+          seg.color_count = 1;
+        }
+
+        active_segments.push_back(seg);
+      }
+
+      use_patterns = true;
+      last_actual_program_id = message_id;
+      publish_actual_program(message_id, "applied");
+
+    } else if (doc.containsKey("program")) {
+      // Single-program setpoint (backward-compat) — clear any segment mode
+      free_active_segments();
       Serial.printf("Applying program setpoint, id=%s\n", message_id.c_str());
       
       // Create a temporary document with just the program data for set_program
@@ -2056,7 +2175,7 @@ void handle_program_setpoint(byte* message, unsigned int length) {
       last_actual_program_id = message_id;
       publish_actual_program(message_id, "applied");
     } else {
-      Serial.println("Program setpoint missing 'program' field");
+      Serial.println("Program setpoint missing 'program' or 'segments' field");
       last_actual_program_id = message_id;
       publish_actual_program(message_id, "error", "missing_program_field");
     }
@@ -3722,10 +3841,36 @@ void cmd_pattern_reset(CommandEnvironment &env) {
 // Helper function to render using pattern system - called from loop()
 // Defined here after pattern classes so it can call their methods
 void render_with_pattern_system() {
+    uint32_t ms = clock_millis();
+
+    if (!active_segments.empty()) {
+        // Multi-segment mode: render each segment independently into its slice of leds[]
+        for (auto& seg : active_segments) {
+            // Swap in this segment's globals (patterns read them inside render())
+            memcpy(global_colors, seg.colors, seg.color_count * sizeof(Color));
+            global_color_count = seg.color_count;
+            global_brightness  = seg.brightness;
+
+            seg.pattern->render(&leds[seg.start], seg.count, ms);
+
+            // Apply per-segment brightness to just this segment's pixels
+            if (seg.brightness < 100) {
+                float fb = seg.brightness / 100.0f;
+                for (int i = seg.start; i < seg.start + seg.count; i++) {
+                    leds[i].r = (uint8_t)(leds[i].r * fb);
+                    leds[i].g = (uint8_t)(leds[i].g * fb);
+                    leds[i].b = (uint8_t)(leds[i].b * fb);
+                }
+            }
+        }
+        return;
+    }
+
+    // Single-pattern mode (original behaviour)
     PatternBase* active = pattern_registry.get_active_pattern();
     if (active) {
         // Patterns render at full brightness
-        active->render(&leds[0], led_count, clock_millis());
+        active->render(&leds[0], led_count, ms);
         
         // Post-process: Apply global brightness scaling
         if (global_brightness < 100) {
