@@ -97,6 +97,7 @@ char mqtt_client_id[20];
 // Observable pattern state tracking
 String last_actual_power_id = "";
 String last_actual_program_id = "";
+String last_received_program_setpoint_id = ""; // last server-generated program setpoint id (for button-press reconciliation)
 bool initial_sync_complete = false;
 bool pending_power_sync = true;
 
@@ -1967,12 +1968,15 @@ void publish_setpoint_power(String message_id) {
 }
 
 // Observable Pattern: Publish actual power state
-void publish_actual_power(String message_id, String status, String error = "") {
+void publish_actual_power(String message_id, String status, String error = "", String last_received_setpoint_id = "") {
   auto & doc = shared_json_output_doc;
   doc.clear();
   doc["id"] = message_id;
   doc["status"] = status;
   doc["timestamp"] = millis();
+  if (last_received_setpoint_id.length() > 0) {
+    doc["last_received_setpoint_id"] = last_received_setpoint_id;
+  }
   doc["lights_on"] = lights_on;
   
   if (error.length() > 0) {
@@ -2160,6 +2164,7 @@ void handle_program_setpoint(byte* message, unsigned int length) {
 
       use_patterns = true;
       last_actual_program_id = message_id;
+      last_received_program_setpoint_id = message_id;
       publish_actual_program(message_id, "applied");
 
     } else if (doc.containsKey("program")) {
@@ -2173,6 +2178,7 @@ void handle_program_setpoint(byte* message, unsigned int length) {
       set_program(program_doc);
       
       last_actual_program_id = message_id;
+      last_received_program_setpoint_id = message_id;
       publish_actual_program(message_id, "applied");
     } else {
       Serial.println("Program setpoint missing 'program' or 'segments' field");
@@ -3262,7 +3268,7 @@ void loop() {
       String unique_id = "controller_" + String(mqtt_client_id) + "_" + String(millis());
       last_actual_power_id = unique_id;
       publish_setpoint_power(unique_id);  // Tell server about our change
-      publish_actual_power(unique_id, "applied");  // Report that we applied it
+      publish_actual_power(unique_id, "applied", "", last_received_program_setpoint_id);  // Report that we applied it, include last known server setpoint for reconciliation
     }
   }
   if(command_button.is_long_press()) {
