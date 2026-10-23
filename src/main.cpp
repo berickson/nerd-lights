@@ -974,7 +974,12 @@ public:
         
         // Calculate movement offset (in LED positions)
         // Positive movement_ should move forward (head leads tail)
-        double shift_left = movement_ * time_ms / 1000.0;
+        // The cast matters: movement_ is float and time_ms is uint32_t, so
+        // without it the multiply is done in single precision. time_ms is
+        // absolute uptime, so after a few weeks the product is large enough
+        // that one frame's worth of movement falls below a float's step size
+        // and the pattern freezes between occasional multi-pixel jumps.
+        double shift_left = (double)movement_ * time_ms / 1000.0;
         
         // For each LED, calculate which meteor it belongs to in the infinite pattern
         for(int i = 0; i < led_count; ++i) {
