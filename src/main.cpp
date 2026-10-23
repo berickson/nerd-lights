@@ -159,6 +159,28 @@ uint32_t clock_millis() {
     return ms & 0xffffffff;// millis();
 }
 
+// Frame-timing instrumentation. Accumulated by loop() and reported by
+// publish_statistics(), which resets it, so every sample describes one publish
+// interval instead of all of uptime. Added to find out where the frame budget
+// actually goes - patterns look like they run well under the 30fps target.
+struct PerfCounters {
+  uint32_t window_start_ms = 0;
+  uint32_t loops = 0;          // loop() iterations
+  uint32_t draws = 0;          // frames rendered
+  uint32_t displays = 0;       // OLED full-frame pushes
+  // Microseconds spent inside each phase during the window. These are totals,
+  // not averages, so they can be compared directly against window_ms to see
+  // what fraction of wall-clock time each phase eats.
+  uint32_t common_us = 0;      // esp32_common_loop()
+  uint32_t mqtt_us = 0;        // mqtt.loop()
+  uint32_t display_us = 0;     // OLED clear/drawString/display
+  uint32_t render_us = 0;      // render_with_pattern_system() or off()
+  uint32_t limit_us = 0;       // current-limit pass
+  uint32_t show_us = 0;        // update_pixels() incl. its own delay(1)
+  uint32_t max_loop_us = 0;    // worst single iteration, excluding trailing delay
+};
+PerfCounters perf;
+
 // returns a random double [0,1)
 double frand() {
   return double(rand()) / (double(RAND_MAX) + 1.0);
@@ -1904,6 +1926,33 @@ void publish_statistics() {
   statistics["wifi_rssi"] = WiFi.RSSI();
   statistics["uptime_seconds"] = millis()/1000;
 
+  // Frame-timing sample for this publish interval, then reset the counters.
+  // Totals are in milliseconds so they can be read against window_ms directly:
+  // a phase showing 9000 of a 30000ms window is eating 30% of wall-clock time.
+  {
+    const uint32_t now_ms = millis();
+    uint32_t window_ms = now_ms - perf.window_start_ms;
+    if (window_ms == 0) window_ms = 1;  // first call, or a millis() wrap
+
+    auto p = statistics.createNestedObject("perf");
+    p["window_ms"] = window_ms;
+    p["fps"] = perf.draws * 1000.0 / window_ms;
+    p["loop_hz"] = perf.loops * 1000.0 / window_ms;
+    p["common_ms"] = perf.common_us / 1000;
+    p["mqtt_ms"] = perf.mqtt_us / 1000;
+    p["display_ms"] = perf.display_us / 1000;
+    p["displays"] = perf.displays;
+    p["render_ms"] = perf.render_us / 1000;
+    p["limit_ms"] = perf.limit_us / 1000;
+    p["show_ms"] = perf.show_us / 1000;
+    p["max_loop_us"] = perf.max_loop_us;
+    p["led_count"] = led_count;
+    p["segments"] = (uint32_t)active_segments.size();
+
+    perf = PerfCounters();
+    perf.window_start_ms = now_ms;
+  }
+
   // send it
   char topic[100];
   snprintf(topic, 99, "controllers/%s/status/statistics", mqtt_client_id);
@@ -2895,6 +2944,10 @@ void setup() {
   // Start rendering immediately - pattern is loaded and ready
   Serial.println("Setup complete - lights will render with last saved pattern");
 
+  // Start the perf window here so the first published sample measures the
+  // render loop rather than boot time.
+  perf.window_start_ms = millis();
+
 }  // setup
 
 // returns part of area up tree [0:1] that needs to be lit to cover height  up tree h[0:1]
@@ -3253,8 +3306,16 @@ void loop() {
   unsigned long loop_ms = clock_millis();
 
 
+  const uint32_t iter_start_us = micros();
+  ++perf.loops;
+
+  uint32_t phase_us = micros();
   esp32_common_loop();
+  perf.common_us += micros() - phase_us;
+
+  phase_us = micros();
   mqtt.loop();
+  perf.mqtt_us += micros() - phase_us;
 
   command_button.execute(loop_ms);
   if(command_button.is_click()) {
@@ -3396,6 +3457,8 @@ void loop() {
   }
 
   if (every_n_ms(last_loop_ms, loop_ms, 100)) {
+    const uint32_t display_start_us = micros();
+    ++perf.displays;
     display.clear();
     
     char buff[80];
@@ -3452,6 +3515,7 @@ Below stuff would be good for a config page
     }
 
     display.display();
+    perf.display_us += micros() - display_start_us;
   }
 
   static LineReader serial_line_reader;
@@ -3475,6 +3539,7 @@ Below stuff would be good for a config page
   const float desired_fps = 30.0;
   if(every_n_ms(last_loop_ms, loop_ms, (int)(1000 / desired_fps))) {
     ++draw_count;
+    ++perf.draws;
 
     // // FPS measurement
     // static unsigned long fps_frame_count = 0;
@@ -3487,14 +3552,17 @@ Below stuff would be good for a config page
     //   fps_last_print_ms = loop_ms;
     // }
 
+    uint32_t draw_phase_us = micros();
     if(lights_on) {
       // Use pattern system
       render_with_pattern_system();
     } else {
       off();
     }
+    perf.render_us += micros() - draw_phase_us;
 
     // enforce current limit
+    draw_phase_us = micros();
     {
       const int base_current = 180; // mA with nothing turned on
       int max_sum_rgb = (max_current-base_current) * 50 / 3;
@@ -3520,9 +3588,17 @@ Below stuff would be good for a config page
         digitalWrite(pin_white_led, LOW);
       }
     }
+    perf.limit_us += micros() - draw_phase_us;
 
+    draw_phase_us = micros();
     update_pixels();
+    perf.show_us += micros() - draw_phase_us;
   }
+
+  // Worst-case iteration, measured before the trailing delay so it reflects
+  // blocking work rather than the deliberate yield.
+  const uint32_t iter_us = micros() - iter_start_us;
+  if (iter_us > perf.max_loop_us) perf.max_loop_us = iter_us;
 
   delay(10);
 
