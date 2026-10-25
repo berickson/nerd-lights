@@ -32,6 +32,10 @@
 
 const char * pref_do_ota_on_boot = "ota_firmware";
 const char * pref_do_ota_spiffs_on_boot = "ota_spiffs";
+// Directory on nerdlights.net holding firmware.bin and spiffs.bin. Saved
+// because the upgrade spans two reboots (firmware, then SPIFFS).
+const char * pref_ota_dir = "ota_dir";
+const char * default_ota_dir = "/updates/heltec-esp32";
 
 bool enable_pixel_update = false;
 
@@ -1613,9 +1617,35 @@ void cmd_restart (CommandEnvironment & env) {
   schedule_restart(500);
 }
 
+// Saves the optional directory argument of the upgrade commands, so a build
+// can be sent to one controller without replacing the file every controller
+// upgrades from. No argument means the default directory.
+bool save_ota_dir(CommandEnvironment & env) {
+  String dir = default_ota_dir;
+  if(env.args.getParamCount() >= 1) {
+    dir = env.args.getCmdParam(1);
+    while(dir.endsWith("/")) {
+      dir.remove(dir.length() - 1);
+    }
+  }
+  if(!dir.startsWith("/updates/") || dir.indexOf("..") >= 0 || dir.indexOf(' ') >= 0) {
+    env.cerr.println("directory must be under /updates/");
+    env.ok = false;
+    return false;
+  }
+  preferences.begin("main");
+  preferences.putString(pref_ota_dir, dir);
+  preferences.end();
+  env.cout.println("Upgrading from " + dir);
+  return true;
+}
+
 void cmd_do_ota_upgrade(CommandEnvironment & env) {
+  if(!save_ota_dir(env)) {
+    return;
+  }
   env.cout.printf("Starting firmware upgrade");
-  
+
   preferences.begin("main");
   preferences.putBool(pref_do_ota_on_boot,true);
   preferences.end();
@@ -1631,6 +1661,9 @@ void cmd_do_ota_upgrade(CommandEnvironment & env) {
 }
 
 void cmd_do_spiffs_upgrade(CommandEnvironment & env) {
+  if(!save_ota_dir(env)) {
+    return;
+  }
   env.cout.printf("Starting SPIFFS upgrade");
   
   preferences.begin("main");
@@ -2655,6 +2688,7 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
   preferences.begin("main", true);
   String ssid = preferences.getString("ssid","");
   String password = preferences.getString("password","");
+  String ota_dir = preferences.getString(pref_ota_dir, default_ota_dir);
   preferences.end();
 
   WiFi.begin(ssid.c_str(), password.c_str());
@@ -2681,13 +2715,18 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
     display.drawString(0,0,"Upgrading SPIFFS");
     display.display();
     Serial.println("Upgrading SPIFFS");
-    do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/spiffs.bin",U_SPIFFS);
+    // SPIFFS is the last step, so a later upgrade starts from the default
+    // directory again unless it names another.
+    preferences.begin("main");
+    preferences.remove(pref_ota_dir);
+    preferences.end();
+    do_ota_upgrade("nerdlights.net", 80, ota_dir + "/spiffs.bin",U_SPIFFS);
   } else {
     Serial.println("Upgrading firmware");
     display.clear();
     display.drawString(0,0,"Upgrading Firmware");
     display.display();
-    do_ota_upgrade("nerdlights.net", 80, "/updates/heltec-esp32/firmware.bin");
+    do_ota_upgrade("nerdlights.net", 80, ota_dir + "/firmware.bin");
 
     preferences.begin("main");
     preferences.putBool(pref_do_ota_spiffs_on_boot,true);
@@ -2821,13 +2860,13 @@ void setup() {
     Command{"scan_networks", cmd_scan_networks, "returns json describing network status"});
 
   commands.emplace_back(
-    Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected)"));
+    Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected). Optional: directory under /updates/"));
   commands.emplace_back(
     Command("restart", cmd_restart, "restart the device"));
   commands.emplace_back(
     Command("get_nearby_devices", cmd_get_nearby_devices, "use network discover to find nearby Nerd Lights"));
   commands.emplace_back(
-    Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected)"));
+    Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected). Optional: directory under /updates/"));
 
   // Pattern system commands
   commands.emplace_back(
