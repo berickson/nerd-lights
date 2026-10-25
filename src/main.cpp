@@ -151,6 +151,15 @@ strand_t *strands[8];
 ////////////////////////////////////////////
 // helpers
 ////////////////////////////////////////////
+
+// FIRMWARE_COMMIT comes from scripts/git_version.py. The server reads this
+// string out of firmware.bin (/api/firmware/latest-version), and provisioning
+// compares it with what a controller reports, so both report sites use this.
+#ifndef FIRMWARE_COMMIT
+#define FIRMWARE_COMMIT "unknown"
+#endif
+#define FIRMWARE_VERSION __DATE__ " " __TIME__ " " FIRMWARE_COMMIT
+
 uint32_t clock_millis() {
     return millis();
     auto start = std::chrono::system_clock::now();
@@ -1774,7 +1783,7 @@ void cmd_status(CommandEnvironment &env)
   o.print(device_name);
   o.println("\",");
 
-  o.print("\"firmware_version\":\"" __DATE__ " " __TIME__ );
+  o.print("\"firmware_version\":\"" FIRMWARE_VERSION );
   o.println("\",");
 
   o.print("\"brightness\":");
@@ -1927,7 +1936,7 @@ void publish_statistics() {
 
   statistics["bytes_free"] = ESP.getFreeHeap();
   statistics["ip_address"] = WiFi.localIP().toString();
-  statistics["firmware_version"] = __DATE__ " " __TIME__;
+  statistics["firmware_version"] = FIRMWARE_VERSION;
   statistics["wifi_rssi"] = WiFi.RSSI();
   statistics["uptime_seconds"] = millis()/1000;
 
