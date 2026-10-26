@@ -236,6 +236,7 @@ static void twinkle_frame(Program &p, Col *a) {
   Col bg = background(p);
   for (int i = 0; i < n; i++) a[i] = bg;
   int count = (int)((float)n * bp(p, 0) / 100.0f);
+  if (count < 1 && bp(p, 0) > 0.0f) count = 1;   // short zones: the original rounded down to none
   if (count > 100) count = 100;
   // The original skipped a new twinkle on a pixel that was still twinkling, so
   // replay the last two seconds to know which ones it kept.
@@ -273,6 +274,7 @@ static void explosion_frame(Program &p, Col *a) {
   Col bg = background(p);
   for (int i = 0; i < n; i++) a[i] = bg;
   int count = (int)((float)n * bp(p, 0) / 100.0f);
+  if (count < 1 && bp(p, 0) > 0.0f) count = 1;   // short zones: the original rounded down to none
   if (count > 100) count = 100;
   for_events(p.t_ms, count, 1000, p.t_ms - 1000, 43, [&](int64_t k, float elapsed) {
     if (elapsed >= 1000.0f) return;

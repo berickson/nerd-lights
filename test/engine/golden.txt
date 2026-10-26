@@ -26,6 +26,8 @@ twinkle_background_300 fbec6f79
 explosion_cap_1000 a93d9893
 meteor_reverse_300 9081175f
 lightning_storm_100 4196c61b
+twinkle_short_9 5af052e4
+explosion_short_9 8e00ef79
 strobe_one_color_10 0c34f2dd
 gamma_before_lava_100 3486f314
 gamma_after_breathe_36 c56ff6b0

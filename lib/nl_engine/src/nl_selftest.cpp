@@ -113,6 +113,10 @@ static const Vector VECTORS[] = {
      nl_config_defaults(&c, NL_BASE_METEOR); colors(c, 3); c.params[0] = -250; c.params[1] = 30; c.params[2] = 0.5f; }},
   {"lightning_storm_100", 100, T_2026, 600, 33, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_LIGHTNING); colors(c, 2); c.params[0] = 100; c.seed = 83; }},
+  {"twinkle_short_9", 9, T_2026, 60, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_TWINKLE); colors(c, 1); }},
+  {"explosion_short_9", 9, T_2026, 60, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_EXPLOSION); colors(c, 1); }},
   {"strobe_one_color_10", 10, T_2026, 60, 50, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_STROBE); colors(c, 1); c.params[0] = 5; }},
   // Output gamma, as the controllers run it
