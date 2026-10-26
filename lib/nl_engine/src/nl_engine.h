@@ -151,7 +151,7 @@ void nl_program_set_utc_offset(nl_program *p, int32_t seconds);
 
 // Every base and effect with its group, description, flags and params, as JSON:
 // {"bases":[{"id","name","group","desc","stateful","ownColors","warn","params":[...]}],
-//  "effects":[{..., "moves", "color":"#rrggbb"|null, ...}]}, in display order.
+//  "effects":[{..., "moves", "tints", "color":"#rrggbb"|null, ...}]}, in display order.
 // Writes up to out_size bytes (always terminated) and returns the full length,
 // so a caller can retry with a bigger buffer.
 int nl_engine_describe(char *out, int out_size);

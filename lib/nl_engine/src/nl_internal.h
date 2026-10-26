@@ -9,7 +9,8 @@ enum {
   F_NO_COLORS = 1,   // uses its own colors (Rainbow, Chomp, Sorting, Traffic)
   F_STATEFUL = 2,    // keeps state that advances in NL_STEP_MS steps
   F_WARN = 4,        // photosensitivity warning (Strobe)
-  F_MOVES = 8        // effect remaps the sample position (Motion, Mirror, Earthquake)
+  F_MOVES = 8,       // effect remaps the sample position (Motion, Mirror, Earthquake)
+  F_TINTS = 16       // effect draws in a color: its own default, or the pattern's (UI shows a color row)
 };
 
 struct Program;

@@ -381,6 +381,7 @@ extern "C" int nl_engine_describe(char *out, int out_size) {
     w.raw(","); w.key("stateful"); w.raw(e.flags & F_STATEFUL ? "true" : "false");
     w.raw(","); w.key("ownColors"); w.raw(e.flags & F_NO_COLORS ? "true" : "false");
     w.raw(","); w.key("moves"); w.raw(e.flags & F_MOVES ? "true" : "false");
+    w.raw(","); w.key("tints"); w.raw(e.flags & F_TINTS ? "true" : "false");
     w.raw(","); w.key("color");
     if (e.default_color) w.str(e.default_color); else w.raw("null");
     w.raw(","); w.params(e.params, e.n_params); w.raw("}");
