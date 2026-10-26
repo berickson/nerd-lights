@@ -189,6 +189,33 @@ extern "C" int nl_selftest(char *out, int out_size) {
                           v.utc_offset_s, rgb, out + used, out_size - used, v.gamma, v.bright_after));
     if (!room) break;
   }
+  // Zone pieces onto a strip: one zone, 50 px, rendered with motion and laid
+  // out three ways on a 60 px strip.
+  {
+    nl_config c;
+    nl_config_defaults(&c, NL_BASE_NORMAL);
+    colors(c, 3);
+    motion(c, 9, 0, 100);
+    static const nl_piece chain[] = {{0, 20, 0, 0}, {25, 30, 20, 1}};
+    static const nl_piece copy[] = {{0, 20, 0, 1}, {30, 30, 0, 0}};
+    static const nl_piece clipped[] = {{50, 20, 40, 0}};   // runs past the zone and the strip
+    const struct { const char *name; const nl_piece *p; int n; uint8_t copy; } cases[] = {
+      {"layout_chain_60", chain, 2, 0}, {"layout_copy_60", copy, 2, 1}, {"layout_clipped_60", clipped, 1, 0}};
+    uint8_t *strip = (uint8_t *)malloc(60 * 3);
+    nl_program *p = nl_program_create(&c, 50);
+    for (int k = 0; room && strip && p && k < 3; k++) {
+      uint32_t crc = 0xffffffffu;
+      for (int f = 0; f < 30; f++) {
+        nl_program_render(p, T_2026 + f * 100, rgb);
+        memset(strip, 0, 60 * 3);
+        nl_layout_apply(rgb, 50, cases[k].copy, cases[k].p, cases[k].n, strip, 60);
+        crc = crc32_update(crc, strip, 60 * 3);
+      }
+      room = add(snprintf(out + used, out_size - used, "%s %08x\n", cases[k].name, (unsigned)~crc));
+    }
+    nl_program_free(p);
+    free(strip);
+  }
   // Every base with its defaults and three colors, 60 s at 2 fps.
   for (uint16_t b = NL_BASE_RAINBOW; room && b < NL_BASE_COUNT; b++) {
     nl_config c;

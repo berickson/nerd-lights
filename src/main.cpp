@@ -149,6 +149,24 @@ void cmd_engine_off(CommandEnvironment &env);
 void cmd_engine_gamma(CommandEnvironment &env);
 void render_engine_show();
 nl_program *engine_show_program = nullptr;  // set by engine_show; replaces normal rendering
+
+// Format 2 program setpoints: one engine program per zone, laid onto this
+// controller's strip through the zone's pieces (docs/mqtt-topics.md).
+struct EngineZone {
+  int zone_id;
+  nl_program *program;
+  uint16_t length;              // the whole zone's pixels, across controllers
+  bool on;
+  bool copy;                    // pieces copy the zone rather than chain it
+  std::vector<nl_piece> pieces; // this controller's parts of the zone
+  uint8_t *rgb;                 // length * 3, the rendered zone
+};
+std::vector<EngineZone> engine_zones;
+bool engine_zones_active = false;
+void free_engine_zones();
+bool apply_engine_zones(JsonObject doc, String &error);
+void render_engine_zones();
+void cmd_led_dump(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
@@ -2133,6 +2151,11 @@ void publish_settings() {
   settings["max_current"] = max_current;
   settings["ssid"] = wifi_task.ssid;
   settings["server"] = server_string();
+  // What the server may send: format 2 is engine looks (needs this firmware)
+  settings["engine"] = FIRMWARE_COMMIT;
+  JsonArray formats = settings.createNestedArray("formats");
+  formats.add(1);
+  formats.add(2);
 
 
   // send it
@@ -2213,7 +2236,12 @@ void publish_actual_program(String message_id, String status, String error = "")
   
   // Include full program state
   auto program = doc.createNestedObject("program");
-  get_program_json(program);
+  if (engine_zones_active) {
+    program["format"] = 2;
+    program["zones"] = (int)engine_zones.size();
+  } else {
+    get_program_json(program);
+  }
   
   if (error.length() > 0) {
     doc["error"] = error;
@@ -2280,9 +2308,9 @@ void handle_power_setpoint(byte* message, unsigned int length) {
 void handle_program_setpoint(byte* message, unsigned int length) {
   pending_program_sync = false;
   
-  // Parse JSON message
-  auto & doc = shared_json_input_doc;
-  doc.clear();
+  // Parse JSON message. Format 2 carries looks next to the legacy segments, so
+  // size the document to the message rather than the shared 3000 bytes.
+  DynamicJsonDocument doc(length * 2 + 2048);
   DeserializationError error = deserializeJson(doc, message, length);
   if (error) {
     Serial.print("handle_program_setpoint deserializeJson() failed: ");
@@ -2294,7 +2322,15 @@ void handle_program_setpoint(byte* message, unsigned int length) {
   String message_id = doc["id"];
   
   if (message_id != last_actual_program_id) {
-    if (doc.containsKey("segments") && doc["segments"].is<JsonArray>()) {
+    if (doc["format"].as<int>() == 2 && doc["zones"].is<JsonArray>()) {
+      Serial.printf("Applying format 2 setpoint, id=%s\n", message_id.c_str());
+      String why;
+      bool ok = apply_engine_zones(doc.as<JsonObject>(), why);
+      last_actual_program_id = message_id;
+      last_received_program_setpoint_id = message_id;
+      publish_actual_program(message_id, ok ? "applied" : "error", why);
+    } else if (doc.containsKey("segments") && doc["segments"].is<JsonArray>()) {
+      free_engine_zones();
       // Multi-segment setpoint — each entry drives an independent pixel range
       Serial.printf("Applying segment setpoint, id=%s\n", message_id.c_str());
       free_active_segments();
@@ -2381,6 +2417,7 @@ void handle_program_setpoint(byte* message, unsigned int length) {
     } else if (doc.containsKey("program")) {
       // Single-program setpoint (backward-compat) — clear any segment mode
       free_active_segments();
+      free_engine_zones();
       Serial.printf("Applying program setpoint, id=%s\n", message_id.c_str());
       
       // Create a temporary document with just the program data for set_program
@@ -3003,6 +3040,8 @@ void setup() {
     Command("engine_show", cmd_engine_show, "Show a pattern engine pattern on the strip: <pattern> [key=value ...], see engine_show help"));
   commands.emplace_back(
     Command("engine_off", cmd_engine_off, "Stop engine_show and go back to normal rendering"));
+  commands.emplace_back(
+    Command("led_dump", cmd_led_dump, "Print the frame last sent to the strip (before current limiting) as hex, with its time"));
   commands.emplace_back(
     Command("engine_gamma", cmd_engine_gamma, "Show or set engine_show's output gamma and when brightness applies: [gamma] [before|after] (default 2.2 before; not saved)"));
   commands.emplace_back(
@@ -3753,6 +3792,8 @@ Below stuff would be good for a config page
     uint32_t draw_phase_us = micros();
     if(engine_show_program) {
       render_engine_show();
+    } else if(lights_on && engine_zones_active) {
+      render_engine_zones();
     } else if(lights_on) {
       // Use pattern system
       render_with_pattern_system();
@@ -3959,6 +4000,164 @@ void render_engine_show() {
     nl_program_render(engine_show_program, engine_time_ms(), rgb);
     for (int i = 0; i < led_count; i++)
         leds[i] = Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+}
+
+// ---- Format 2: zones rendered by the engine ----
+
+static int64_t engine_last_frame_ms = 0;
+static uint8_t engine_strip_rgb[max_led_count * 3];   // last frame, before current limiting
+
+void free_engine_zones() {
+    for (auto &z : engine_zones) {
+        nl_program_free(z.program);
+        free(z.rgb);
+    }
+    engine_zones.clear();
+    engine_zones_active = false;
+}
+
+static uint8_t hex_byte(const char *h) {
+    char b[3] = {h[0], h[1], 0};
+    return (uint8_t)strtoul(b, nullptr, 16);
+}
+
+static bool parse_hex_color(const char *hex, nl_rgb &out) {
+    if (!hex || hex[0] != '#' || strlen(hex) < 7) return false;
+    out = nl_rgb{hex_byte(hex + 1), hex_byte(hex + 3), hex_byte(hex + 5)};
+    return true;
+}
+
+// A look ({base, baseParams, colors, effects}) into an engine config. Names
+// match the engine's tables; unknown ones are skipped with a log line.
+static bool look_to_config(JsonObject look, nl_config &c, String &error) {
+    const char *base = look["base"] | "Normal";
+    int id = -1;
+    for (uint16_t b = 0; nl_base_name(b); b++)
+        if (strcasecmp(base, nl_base_name(b)) == 0) id = b;
+    if (id < 0) {
+        error = String("unknown pattern ") + base;
+        return false;
+    }
+    nl_config_defaults(&c, id);
+    JsonObject params = look["baseParams"];
+    for (uint8_t i = 0; i < nl_base_param_count(id); i++) {
+        const char *key = nl_base_param(id, i)->key;
+        if (params.containsKey(key)) c.params[i] = params[key].as<float>();
+    }
+    c.n_colors = 0;
+    for (JsonVariant v : look["colors"].as<JsonArray>())
+        if (c.n_colors < NL_MAX_COLORS && parse_hex_color(v.as<const char *>(), c.colors[c.n_colors])) c.n_colors++;
+    for (JsonObject fx : look["effects"].as<JsonArray>()) {
+        const char *type = fx["type"] | "";
+        int t = -1;
+        for (uint16_t e = 0; nl_effect_name(e); e++)
+            if (strcasecmp(type, nl_effect_name(e)) == 0) t = e;
+        if (t < 0) {
+            Serial.printf("look: unknown effect '%s' skipped\n", type);
+            continue;
+        }
+        int k = nl_config_add_effect(&c, t);
+        if (k < 0) break;
+        nl_effect_config &e = c.effects[k];
+        e.instance = fx["n"] | 1;
+        e.on = (fx["on"] | true) ? 1 : 0;
+        JsonObject p = fx["params"];
+        for (uint8_t i = 0; i < nl_effect_param_count(t); i++) {
+            const char *key = nl_effect_param(t, i)->key;
+            if (p.containsKey(key)) e.params[i] = p[key].as<float>();
+        }
+        const char *color = fx["color"] | (const char *)nullptr;
+        if (color && strcmp(color, "base") == 0) e.color_mode = NL_COLOR_PATTERN;
+        else if (parse_hex_color(color, e.color)) e.color_mode = NL_COLOR_CUSTOM;
+    }
+    return true;
+}
+
+// Build every zone first, then swap, so a bad setpoint leaves the old one running.
+bool apply_engine_zones(JsonObject doc, String &error) {
+    float gamma = doc["gamma"] | 2.2f;
+    bool bright_after = doc["brightness_after_gamma"] | false;
+    std::vector<EngineZone> zones;
+    bool ok = true;
+    for (JsonObject zj : doc["zones"].as<JsonArray>()) {
+        EngineZone z;
+        z.zone_id = zj["zone_id"] | 0;
+        z.on = zj["on"] | true;
+        z.copy = strcmp(zj["join"] | "chain", "copy") == 0;
+        int length = zj["length"] | 0;
+        if (length > NL_MAX_PIXELS) {
+            Serial.printf("zone %d: length %d capped at %d\n", z.zone_id, length, NL_MAX_PIXELS);
+            length = NL_MAX_PIXELS;
+        }
+        z.length = (uint16_t)length;
+        for (JsonObject pj : zj["pieces"].as<JsonArray>())
+            z.pieces.push_back(nl_piece{(uint16_t)(pj["start_pixel"] | 0), (uint16_t)(pj["light_count"] | 0),
+                                        (uint16_t)(pj["zone_offset"] | 0), (uint8_t)((pj["reversed"] | false) ? 1 : 0)});
+        nl_config c;
+        String why;
+        if (!look_to_config(zj["look"], c, why)) {
+            error = String("zone ") + z.zone_id + ": " + why;
+            Serial.println(error);
+            nl_config_defaults(&c, NL_BASE_NORMAL);   // keep the zone, plain white
+        }
+        c.brightness = zj["brightness"] | 100;
+        c.seed = (uint32_t)z.zone_id;
+        z.program = z.length ? nl_program_create(&c, z.length) : nullptr;
+        z.rgb = z.length ? (uint8_t *)malloc(z.length * 3) : nullptr;
+        if (z.length && (!z.program || !z.rgb)) {
+            nl_program_free(z.program);
+            free(z.rgb);
+            error = String("zone ") + z.zone_id + ": out of memory";
+            ok = false;
+            break;
+        }
+        if (z.program) {
+            nl_program_set_output(z.program, gamma, bright_after);
+            nl_program_set_utc_offset(z.program, zj["utc_offset_s"] | 0);
+        }
+        zones.push_back(z);
+    }
+    if (!ok) {
+        for (auto &z : zones) {
+            nl_program_free(z.program);
+            free(z.rgb);
+        }
+        Serial.println(error);
+        return false;
+    }
+    free_engine_zones();
+    free_active_segments();
+    engine_zones = zones;
+    engine_zones_active = true;
+    use_patterns = true;
+    Serial.printf("format 2: %d zones, %u bytes free\n", (int)engine_zones.size(), ESP.getFreeHeap());
+    return error.length() == 0;
+}
+
+void render_engine_zones() {
+    int64_t t = engine_time_ms();
+    memset(engine_strip_rgb, 0, led_count * 3);
+    for (auto &z : engine_zones) {
+        if (!z.on || !z.program) continue;
+        nl_program_render(z.program, t, z.rgb);
+        nl_layout_apply(z.rgb, z.length, z.copy, z.pieces.data(), (int)z.pieces.size(),
+                        engine_strip_rgb, (uint16_t)led_count);
+    }
+    engine_last_frame_ms = t;
+    for (int i = 0; i < led_count; i++)
+        leds[i] = Color(engine_strip_rgb[i * 3], engine_strip_rgb[i * 3 + 1], engine_strip_rgb[i * 3 + 2]);
+}
+
+void cmd_led_dump(CommandEnvironment &env) {
+    env.cout.printf("t=%lld px=%d mode=%s\n", (long long)engine_last_frame_ms, led_count,
+                    engine_show_program ? "engine_show" : engine_zones_active ? "zones" : "legacy");
+    for (int i = 0; i < led_count; i++) {
+        Color c = leds[i];
+        if (engine_zones_active && !engine_show_program)
+            c = Color(engine_strip_rgb[i * 3], engine_strip_rgb[i * 3 + 1], engine_strip_rgb[i * 3 + 2]);
+        env.cout.printf("%02x%02x%02x", c.r, c.g, c.b);
+    }
+    env.cout.println();
 }
 
 // Pattern and effect names as typed: case, spaces and punctuation ignored,

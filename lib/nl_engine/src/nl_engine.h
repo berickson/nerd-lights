@@ -179,6 +179,20 @@ void nl_config_set_effect_instance(nl_config *cfg, uint8_t k, uint16_t instance)
 // mode is an nl_effect_color; the color only matters for NL_COLOR_CUSTOM.
 void nl_config_set_effect_color(nl_config *cfg, uint8_t k, uint8_t mode, uint8_t r, uint8_t g, uint8_t b);
 
+// A zone's run of pixels on one strip (see layout.cpp).
+typedef struct {
+  uint16_t start_pixel;   // first physical pixel on the strip, 0-based
+  uint16_t light_count;
+  uint16_t zone_offset;   // chain: the zone pixel this piece starts at
+  uint8_t reversed;
+} nl_piece;
+
+// Copy a rendered zone (zone_len pixels, rgb) onto a strip through its pieces.
+// copy != 0: every piece shows the zone from its start; else they chain.
+void nl_layout_apply(const uint8_t *zone_rgb, uint16_t zone_len, uint8_t copy,
+                     const nl_piece *pieces, int n_pieces,
+                     uint8_t *strip_rgb, uint16_t strip_len);
+
 // Runs the golden vectors (nl_selftest.cpp) and writes one line per vector,
 // "name crc32", into out. Returns the length written.
 int nl_selftest(char *out, int out_size);
