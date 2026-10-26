@@ -32,10 +32,25 @@
 
 const char * pref_do_ota_on_boot = "ota_firmware";
 const char * pref_do_ota_spiffs_on_boot = "ota_spiffs";
-// Directory on nerdlights.net holding firmware.bin and spiffs.bin. Saved
+// Directory on the server holding firmware.bin and spiffs.bin. Saved
 // because the upgrade spans two reboots (firmware, then SPIFFS).
 const char * pref_ota_dir = "ota_dir";
 const char * default_ota_dir = "/updates/heltec-esp32";
+
+// Which deployment this controller belongs to, saved as host[:port]. MQTT
+// uses host:port; OTA uses the same host over HTTP on port 80, where nginx
+// tells deployments apart by name. Ports follow a convention kept on the
+// server (production 1883, test stacks 1883 + n), not a rule in here.
+const char * pref_server = "server";
+const char * default_server_host = "nerdlights.net";
+const uint16_t default_mqtt_port = 1883;
+// Off the default server, give up and return to it after this long with
+// WiFi up but MQTT down, so a broken test stack can't strand a controller.
+const unsigned long server_fallback_ms = 10 * 60 * 1000;
+// PubSubClient keeps this pointer rather than copying it, so it must live
+// as long as the client does.
+String server_host = default_server_host;
+uint16_t server_mqtt_port = default_mqtt_port;
 
 bool enable_pixel_update = false;
 
@@ -1617,6 +1632,87 @@ void cmd_restart (CommandEnvironment & env) {
   schedule_restart(500);
 }
 
+bool parse_server(String s, String & host, uint16_t & port) {
+  s.trim();
+  s.toLowerCase();
+  port = default_mqtt_port;
+  int colon = s.lastIndexOf(':');
+  if(colon >= 0) {
+    long p = s.substring(colon + 1).toInt();
+    if(p < 1 || p > 65535) {
+      return false;
+    }
+    port = p;
+    s = s.substring(0, colon);
+  }
+  if(s.length() == 0 || s.length() > 253) {
+    return false;
+  }
+  for(char c : s) {
+    if(!isalnum(c) && c != '.' && c != '-') {
+      return false;
+    }
+  }
+  host = s;
+  return true;
+}
+
+String server_string() {
+  return server_host + ":" + String(server_mqtt_port);
+}
+
+bool is_default_server() {
+  return server_host == default_server_host && server_mqtt_port == default_mqtt_port;
+}
+
+// Must run before anything uses server_host: the boot-time OTA and setServer.
+void load_server() {
+  preferences.begin("main", true);
+  String saved = preferences.getString(pref_server, "");
+  preferences.end();
+  if(saved.length() && !parse_server(saved, server_host, server_mqtt_port)) {
+    Serial.println("Ignoring invalid saved server: " + saved);
+    server_host = default_server_host;
+    server_mqtt_port = default_mqtt_port;
+  }
+  Serial.println("Server: " + server_string());
+}
+
+void return_to_default_server(const char * why) {
+  Serial.printf("Returning to %s:%u (%s)\n", default_server_host, default_mqtt_port, why);
+  preferences.begin("main");
+  preferences.remove(pref_server);
+  preferences.end();
+  schedule_restart(500);
+}
+
+void cmd_server(CommandEnvironment & env) {
+  if(env.args.getParamCount() < 1) {
+    env.cout.println(server_string());
+    return;
+  }
+  String host;
+  uint16_t port;
+  String arg = env.args.getCmdParam(1);
+  if(arg == "default") {
+    arg = default_server_host;
+  }
+  if(!parse_server(arg, host, port)) {
+    env.cerr.println("usage: server [host[:port]], e.g. server staging.nerdlights.net:1884");
+    env.ok = false;
+    return;
+  }
+  preferences.begin("main");
+  if(host == default_server_host && port == default_mqtt_port) {
+    preferences.remove(pref_server);
+  } else {
+    preferences.putString(pref_server, host + ":" + String(port));
+  }
+  preferences.end();
+  env.cout.println("Server set to " + host + ":" + String(port) + ", restarting");
+  schedule_restart(500);
+}
+
 // Saves the optional directory argument of the upgrade commands, so a build
 // can be sent to one controller without replacing the file every controller
 // upgrades from. No argument means the default directory.
@@ -2018,6 +2114,7 @@ void publish_settings() {
   settings["led_count"] = led_count;
   settings["max_current"] = max_current;
   settings["ssid"] = wifi_task.ssid;
+  settings["server"] = server_string();
 
 
   // send it
@@ -2720,13 +2817,13 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
     preferences.begin("main");
     preferences.remove(pref_ota_dir);
     preferences.end();
-    do_ota_upgrade("nerdlights.net", 80, ota_dir + "/spiffs.bin",U_SPIFFS);
+    do_ota_upgrade(server_host, 80, ota_dir + "/spiffs.bin",U_SPIFFS);
   } else {
     Serial.println("Upgrading firmware");
     display.clear();
     display.drawString(0,0,"Upgrading Firmware");
     display.display();
-    do_ota_upgrade("nerdlights.net", 80, ota_dir + "/firmware.bin");
+    do_ota_upgrade(server_host, 80, ota_dir + "/firmware.bin");
 
     preferences.begin("main");
     preferences.putBool(pref_do_ota_spiffs_on_boot,true);
@@ -2765,6 +2862,7 @@ void setup() {
   Serial.begin(921600);
   Serial.println();
   Serial.println("booting Nerdlights");
+  load_server();
 
 
   // do OTA upgrade if indicated
@@ -2860,13 +2958,15 @@ void setup() {
     Command{"scan_networks", cmd_scan_networks, "returns json describing network status"});
 
   commands.emplace_back(
-    Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from nerdlights.net over wifi (must be connected). Optional: directory under /updates/"));
+    Command("do_firmware_upgrade", cmd_do_ota_upgrade, "update firmware from the server over wifi (must be connected). Optional: directory under /updates/"));
   commands.emplace_back(
     Command("restart", cmd_restart, "restart the device"));
   commands.emplace_back(
+    Command("server", cmd_server, "show or set the server (host[:port], or default); restarts when set"));
+  commands.emplace_back(
     Command("get_nearby_devices", cmd_get_nearby_devices, "use network discover to find nearby Nerd Lights"));
   commands.emplace_back(
-    Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from nerdlights.net over wifi (must be connected). Optional: directory under /updates/"));
+    Command("do_spiffs_upgrade", cmd_do_spiffs_upgrade, "update file system from the server over wifi (must be connected). Optional: directory under /updates/"));
 
   // Pattern system commands
   commands.emplace_back(
@@ -2961,7 +3061,7 @@ void setup() {
   );
 
   mqtt.setBufferSize(8192);
-  mqtt.setServer("nerdlights.net", 1883);
+  mqtt.setServer(server_host.c_str(), server_mqtt_port);
   sprintf(mqtt_client_id, "esp32-%" PRIx64, ESP.getEfuseMac());
 
   // Initialize pattern system (must be called after all other setup)
@@ -3387,6 +3487,19 @@ void loop() {
   }
   if(command_button.is_long_press()) {
     Serial.println("command long pressed");
+    if(!is_default_server()) {
+      return_to_default_server("button long press");
+    }
+  }
+
+  // Time with WiFi up but MQTT down. Off the default server, too much of it
+  // sends the controller back; a WiFi outage doesn't count against the server.
+  static unsigned long mqtt_reachable_ms = 0;
+  if(!is_wifi_connected_to_internet() || mqtt.connected()) {
+    mqtt_reachable_ms = loop_ms;
+  } else if(!is_default_server() && loop_ms - mqtt_reachable_ms > server_fallback_ms) {
+    mqtt_reachable_ms = loop_ms;  // restart is scheduled; don't schedule it again
+    return_to_default_server("no MQTT for 10 minutes");
   }
 
   // MQTT Connection State Machine
