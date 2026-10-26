@@ -54,10 +54,22 @@ static Col normal_at(const Program &p, int idx, int32_t wq) {
   float bwf = bp(p, 0), b = bp(p, 2) / 100.0f;
   float w = (float)wq * (1.0f / 65536.0f);
   if (bp(p, 1) > 0.0f) {
-    if (w >= bwf) return BLACK;
-    float e = b * bwf / 2.0f;
-    float k = e > 0.0f ? minf(1.0f, minf(w / e, (bwf - w) / e)) : 1.0f;
-    return scale(p.colors[idx], k);
+    // Bands with dark gaps. A soft edge is a ramp centered on the band edge,
+    // as wide as the band (at least 2 px) or twice the gap, whichever is less: the band's
+    // outer pixels dim and the gap pixels beside them take a little of its
+    // color (the next band's on the far side). Blend mixes from hard edges
+    // (0%) to soft ones (100%). Pixels are judged at their middles.
+    float gapf = bp(p, 1), cell = bwf + gapf, c = w + 0.5f;
+    float e = minf(maxf(bwf, 2.0f), 2.0f * gapf);
+    float d_own = minf(c, bwf - c), d_next = c - cell;
+    float k_own = (d_own > 0.0f ? 1.0f - b : 0.0f) + b * clampf(0.5f + d_own / e, 0.0f, 1.0f);
+    float k_next = (d_next > 0.0f ? 1.0f - b : 0.0f) + b * clampf(0.5f + d_next / e, 0.0f, 1.0f);
+    Col v = scale(p.colors[idx], k_own);
+    if (k_next > 0.0f) {
+      Col n = scale(p.colors[(idx + 1) % L], k_next);
+      v = col(minf(255.0f, v.r + n.r), minf(255.0f, v.g + n.g), minf(255.0f, v.b + n.b));
+    }
+    return v;
   }
   float k = b > 0.0f ? maxf(0.0f, (w / bwf - (1.0f - b)) / b) : 0.0f;
   k = k * k * (3.0f - 2.0f * k);
