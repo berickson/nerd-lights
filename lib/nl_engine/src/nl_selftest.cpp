@@ -20,6 +20,7 @@ struct Vector {
   int jump_at;        // frame index that jumps ahead by jump_ms (0: none)
   int jump_ms;
   void (*setup)(nl_config &c);
+  int32_t utc_offset_s;
 };
 
 static void colors(nl_config &c, int count) {
@@ -73,40 +74,120 @@ static const Vector VECTORS[] = {
      nl_config_defaults(&c, NL_BASE_TETRIS); colors(c, 2); c.seed = 77; motion(c, 7, 0, 100); }},
   {"tetris_1px", 1, T_2026, 300, 33, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_TETRIS); c.seed = 78; }},
+  // Phase 2 special cases (the loops in nl_selftest add one vector per base and effect)
+  {"stack_fire_300", 300, T_2026, 120, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_FIRE); colors(c, 3); c.brightness = 60; c.seed = 80;
+     nl_config_add_effect(&c, NL_FX_MIRROR); motion(c, 12, 0, 100);
+     nl_config_add_effect(&c, NL_FX_SHIMMER); nl_config_add_effect(&c, NL_FX_SPARKLE);
+     nl_config_add_effect(&c, NL_FX_FIREWORKS); nl_config_add_effect(&c, NL_FX_BOUNCING_BALLS);
+     nl_config_add_effect(&c, NL_FX_EARTHQUAKE); nl_config_add_effect(&c, NL_FX_LIGHTNING); }},
+  {"ghost_twice_100", 100, T_2026, 120, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_RAINBOW);
+     int a = nl_config_add_effect(&c, NL_FX_GHOST), b = nl_config_add_effect(&c, NL_FX_GHOST);
+     nl_config_set_effect_instance(&c, a, 1); nl_config_set_effect_instance(&c, b, 2); }},
+  {"color_modes_100", 100, T_2026, 240, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_TWINKLE); colors(c, 2);
+     int a = nl_config_add_effect(&c, NL_FX_LIGHTNING), b = nl_config_add_effect(&c, NL_FX_SPARKLE);
+     nl_config_set_effect_color(&c, a, NL_COLOR_CUSTOM, 255, 0, 128);
+     nl_config_set_effect_color(&c, b, NL_COLOR_PATTERN, 0, 0, 0); }},
+  {"binary_clock_tz_36", 36, T_2026, 20, 1000, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_BINARY_CLOCK); colors(c, 3); }, -7 * 3600},
+  {"aurora_nocolor_100", 100, T_2026, 30, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_AURORA); }},
+  {"candles_spaced_100", 100, T_2026, 30, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_CANDLES); c.params[0] = 4; c.params[2] = 20; }},
+  {"pong_5px", 5, T_2026, 60, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_PONG); colors(c, 2); }},
+  {"sorting_1000", 1000, T_2026, 40, 500, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_SORTING); c.seed = 81; c.params[0] = 60; }},
+  {"automaton_rule110_300", 300, T_2026, 120, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_AUTOMATON); colors(c, 2); c.params[0] = 110; c.params[1] = 30; c.seed = 82; }},
 };
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *data, int len) {
-  for (int i = 0; i < len; i++) {
-    crc ^= data[i];
-    for (int b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1)));
+// "Rain & ripples" -> "rain_ripples"
+static void slug(char *out, int size, const char *prefix, const char *name, int n) {
+  int len = snprintf(out, size, "%s", prefix);
+  bool sep = false;
+  for (const char *c = name; *c && len < size - 8; c++) {
+    char ch = *c;
+    if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+    bool alnum = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+    if (!alnum) { sep = true; continue; }
+    if (sep && len > (int)strlen(prefix)) out[len++] = '_';
+    sep = false;
+    out[len++] = ch;
   }
+  snprintf(out + len, size - len, "_%d", n);
+}
+
+static uint32_t crc32_update(uint32_t crc, const uint8_t *data, int len) {
+  static uint32_t table[256];
+  if (!table[1])
+    for (uint32_t i = 0; i < 256; i++) {
+      uint32_t c = i;
+      for (int b = 0; b < 8; b++) c = (c >> 1) ^ (0xedb88320u & (0u - (c & 1)));
+      table[i] = c;
+    }
+  for (int i = 0; i < len; i++) crc = table[(crc ^ data[i]) & 0xff] ^ (crc >> 8);
   return crc;
+}
+
+// One vector: render frames and print "name crc32".
+static int run_vector(const char *name, const nl_config &c, uint16_t n, int64_t t0, int frames,
+                      int frame_ms, int jump_at, int jump_ms, int32_t utc_offset_s, uint8_t *rgb,
+                      char *out, int room) {
+  nl_program *p = nl_program_create(&c, n);
+  if (!p) return snprintf(out, room, "%s create-failed\n", name);
+  nl_program_set_utc_offset(p, utc_offset_s);
+  uint32_t crc = 0xffffffffu;
+  int64_t t = t0;
+  for (int f = 0; f < frames; f++) {
+    if (jump_at && f == jump_at) t += jump_ms;
+    nl_program_render(p, t, rgb);
+    crc = crc32_update(crc, rgb, n * 3);
+    t += frame_ms;
+  }
+  nl_program_free(p);
+  return snprintf(out, room, "%s %08x\n", name, (unsigned)~crc);
 }
 
 extern "C" int nl_selftest(char *out, int out_size) {
   int used = 0;
   uint8_t *rgb = (uint8_t *)malloc(NL_MAX_PIXELS * 3);
   if (!rgb) return snprintf(out, out_size, "ERROR out of memory\n");
+  auto add = [&](int w) {
+    if (w < 0 || w >= out_size - used) return false;
+    used += w;
+    return true;
+  };
+  bool room = true;
   for (const Vector &v : VECTORS) {
     nl_config c;
     v.setup(c);
-    nl_program *p = nl_program_create(&c, v.n);
-    bool ok = p != nullptr;
-    uint32_t crc = 0xffffffffu;
-    if (ok) {
-      int64_t t = v.t0;
-      for (int f = 0; f < v.frames; f++) {
-        if (v.jump_at && f == v.jump_at) t += v.jump_ms;
-        nl_program_render(p, t, rgb);
-        crc = crc32_update(crc, rgb, v.n * 3);
-        t += v.frame_ms;
-      }
-      nl_program_free(p);
-    }
-    int w = snprintf(out + used, out_size - used, ok ? "%s %08x\n" : "%s create-failed\n",
-                     v.name, (unsigned)~crc);
-    if (w < 0 || w >= out_size - used) break;
-    used += w;
+    room = add(run_vector(v.name, c, v.n, v.t0, v.frames, v.frame_ms, v.jump_at, v.jump_ms,
+                          v.utc_offset_s, rgb, out + used, out_size - used));
+    if (!room) break;
+  }
+  // Every base with its defaults and three colors, 60 s at 2 fps.
+  for (uint16_t b = NL_BASE_RAINBOW; room && b < NL_BASE_COUNT; b++) {
+    nl_config c;
+    nl_config_defaults(&c, b);
+    colors(c, 3);
+    c.seed = 90 + b;
+    char name[48];
+    slug(name, sizeof name, "base_", nl_base_name(b), 36);
+    room = add(run_vector(name, c, 36, T_2026, 120, 500, 0, 0, 0, rgb, out + used, out_size - used));
+  }
+  // Every effect with its defaults over striped Normal, 60 s at 2 fps.
+  for (uint16_t e = NL_FX_MIRROR; room && e < NL_FX_COUNT; e++) {
+    nl_config c;
+    nl_config_defaults(&c, NL_BASE_NORMAL);
+    colors(c, 3);
+    c.seed = 120 + e;
+    nl_config_add_effect(&c, e);
+    char name[48];
+    slug(name, sizeof name, "fx_", nl_effect_name(e), 36);
+    room = add(run_vector(name, c, 36, T_2026, 120, 500, 0, 0, 0, rgb, out + used, out_size - used));
   }
   free(rgb);
   return used;

@@ -3807,7 +3807,7 @@ Below stuff would be good for a config page
 // Output matches test/engine/golden.txt when the ESP32 renders exactly like
 // the WebAssembly build.
 void cmd_engine_selftest(CommandEnvironment &env) {
-    const int size = 2048;
+    const int size = 6144;
     char *out = (char *)malloc(size);
     if (!out) {
         env.cout.println("ERROR: out of memory");
@@ -3860,6 +3860,19 @@ void cmd_engine_bench(CommandEnvironment &env) {
     c.n_colors = 3;
     c.colors[0] = {0, 255, 255}; c.colors[1] = {255, 184, 0}; c.colors[2] = {255, 0, 255};
     engine_bench_one(env, "tetris", c);
+    c.base = NL_BASE_CANDLES;
+    nl_config_defaults(&c, NL_BASE_CANDLES);
+    engine_bench_one(env, "candles", c);
+    nl_config_defaults(&c, NL_BASE_AURORA);
+    engine_bench_one(env, "aurora", c);
+    nl_config_defaults(&c, NL_BASE_FIRE);
+    c.n_colors = 3;
+    c.colors[0] = {0, 255, 255}; c.colors[1] = {255, 184, 0}; c.colors[2] = {255, 0, 255};
+    nl_config_add_effect(&c, NL_FX_MOTION);
+    nl_config_add_effect(&c, NL_FX_SHIMMER);
+    nl_config_add_effect(&c, NL_FX_SPARKLE);
+    nl_config_add_effect(&c, NL_FX_FIREWORKS);
+    engine_bench_one(env, "fire+motion+shimmer+sparkle+fireworks", c);
     env.cout.printf("free heap %u bytes\n", ESP.getFreeHeap());
 }
 
@@ -3878,15 +3891,45 @@ static int64_t engine_time_ms() {
     return millis();
 }
 
+// Local time offset for Binary clock, from the time zone configTime set.
+static int32_t engine_utc_offset_s() {
+    time_t now = time(nullptr);
+    struct tm local, utc;
+    localtime_r(&now, &local);
+    gmtime_r(&now, &utc);
+    int32_t d = (local.tm_hour - utc.tm_hour) * 3600 + (local.tm_min - utc.tm_min) * 60;
+    int days = local.tm_yday - utc.tm_yday;   // -1, 0 or 1, except across New Year
+    if (days > 1) days = -1;
+    if (days < -1) days = 1;
+    return d + days * 86400;
+}
+
 void render_engine_show() {
     static uint8_t rgb[max_led_count * 3];
+    static uint32_t offset_checked_ms = 0;
+    if (millis() - offset_checked_ms > 60000) {
+        nl_program_set_utc_offset(engine_show_program, engine_utc_offset_s());
+        offset_checked_ms = millis();
+    }
     nl_program_render(engine_show_program, engine_time_ms(), rgb);
     for (int i = 0; i < led_count; i++)
         leds[i] = Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
 }
 
+// Pattern and effect names as typed: case, spaces and punctuation ignored,
+// so "lavalamp" and "rain&ripples" work.
+static bool engine_name_is(const char *typed, const char *name) {
+    for (;;) {
+        while (*typed && !isalnum((unsigned char)*typed)) typed++;
+        while (*name && !isalnum((unsigned char)*name)) name++;
+        if (!*typed || !*name) return !*typed && !*name;
+        if (tolower((unsigned char)*typed++) != tolower((unsigned char)*name++)) return false;
+    }
+}
+
 static void engine_show_help(CommandEnvironment &env) {
-    env.cout.println("engine_show <pattern> [key=value ...]");
+    env.cout.println("engine_show <pattern> [key=value ...] [+effect] [effect.key=value ...]");
+    env.cout.println("patterns:");
     for (uint16_t b = 0; nl_base_name(b); b++) {
         env.cout.printf("  %s:", nl_base_name(b));
         for (uint8_t i = 0; i < nl_base_param_count(b); i++) {
@@ -3895,8 +3938,17 @@ static void engine_show_help(CommandEnvironment &env) {
         }
         env.cout.println();
     }
-    env.cout.println("  any pattern: motion=<px/s> swing=<px> smooth=<%> bright=<1-100>");
-    env.cout.println("               colors=rrggbb,rrggbb,... (up to 8)");
+    env.cout.println("effects (+name adds one; name.key=value sets the last one added):");
+    for (uint16_t e = 0; nl_effect_name(e); e++) {
+        env.cout.printf("  %s:", nl_effect_name(e));
+        for (uint8_t i = 0; i < nl_effect_param_count(e); i++) {
+            const nl_param_def *d = nl_effect_param(e, i);
+            env.cout.printf(" %s=%g..%g%s", d->key, d->min, d->max, d->unit);
+        }
+        env.cout.println();
+    }
+    env.cout.println("any pattern: motion=<px/s> swing=<px> smooth=<%> bright=<1-100>");
+    env.cout.println("             colors=rrggbb,rrggbb,... (up to 8)");
     env.cout.println("engine_off goes back to normal rendering");
 }
 
@@ -3905,7 +3957,7 @@ void cmd_engine_show(CommandEnvironment &env) {
     const char *name = count > 1 ? env.args.getCmdParam(1) : nullptr;
     int base = -1;
     for (uint16_t b = 0; name && nl_base_name(b); b++)
-        if (strcasecmp(name, nl_base_name(b)) == 0) base = b;
+        if (engine_name_is(name, nl_base_name(b))) base = b;
     if (base < 0) {
         engine_show_help(env);
         return;
@@ -3920,6 +3972,21 @@ void cmd_engine_show(CommandEnvironment &env) {
     int motion = -1;
     for (int a = 2; a < count; a++) {
         const char *arg = env.args.getCmdParam(a);
+        if (arg && arg[0] == '+') {
+            int type = -1;
+            for (uint16_t e = 0; nl_effect_name(e); e++)
+                if (engine_name_is(arg + 1, nl_effect_name(e))) type = e;
+            int k = type < 0 ? -1 : nl_config_add_effect(&c, type);
+            if (k < 0) {
+                env.cout.printf("ERROR: %s (unknown effect, or %d effects already)\n", arg, NL_MAX_EFFECTS);
+                return;
+            }
+            int copies = 0;
+            for (int j = 0; j <= k; j++) copies += c.effects[j].type == type;
+            nl_config_set_effect_instance(&c, k, copies);
+            if (type == NL_FX_MOTION) motion = k;
+            continue;
+        }
         const char *eq = arg ? strchr(arg, '=') : nullptr;
         if (!eq) {
             env.cout.printf("ERROR: expected key=value, got %s\n", arg ? arg : "");
@@ -3936,6 +4003,25 @@ void cmd_engine_show(CommandEnvironment &env) {
             }
         }
         if (found) continue;
+        int dot = key.indexOf('.');
+        if (dot > 0) {
+            String fx_name = key.substring(0, dot), fx_key = key.substring(dot + 1);
+            for (int k = c.n_effects - 1; k >= 0 && !found; k--) {
+                uint16_t type = c.effects[k].type;
+                if (!engine_name_is(fx_name.c_str(), nl_effect_name(type))) continue;
+                for (uint8_t i = 0; i < nl_effect_param_count(type); i++)
+                    if (fx_key.equalsIgnoreCase(nl_effect_param(type, i)->key)) {
+                        c.effects[k].params[i] = atof(value);
+                        found = true;
+                    }
+                if (!found) break;
+            }
+            if (!found) {
+                env.cout.printf("ERROR: %s matches no added effect and param (add it with +name first)\n", key.c_str());
+                return;
+            }
+            continue;
+        }
         if (key == "motion" || key == "swing" || key == "smooth") {
             if (motion < 0) {
                 motion = c.n_effects++;
@@ -3965,11 +4051,14 @@ void cmd_engine_show(CommandEnvironment &env) {
         env.cout.println("ERROR: could not create the program");
         return;
     }
+    nl_program_set_utc_offset(p, engine_utc_offset_s());
     nl_program *old = engine_show_program;
     engine_show_program = p;   // loop() and console commands run on the same task
     nl_program_free(old);
-    env.cout.printf("showing %s on %d px, %s clock\n", nl_base_name(base), led_count,
-                    engine_clock_synced() ? "NTP" : "uptime (not synced)");
+    env.cout.printf("showing %s", nl_base_name(base));
+    for (int k = 0; k < c.n_effects; k++) env.cout.printf(" + %s", nl_effect_name(c.effects[k].type));
+    env.cout.printf(" on %d px, %s clock, %u bytes\n", led_count,
+                    engine_clock_synced() ? "NTP" : "uptime (not synced)", nl_program_bytes(p));
 }
 
 void cmd_engine_off(CommandEnvironment &env) {

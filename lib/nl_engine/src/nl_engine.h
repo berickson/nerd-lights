@@ -22,15 +22,56 @@ extern "C" {
 #define NL_MAX_PIXELS 1000
 #define NL_STEP_MS 20
 
+// Ids are stable: they feed seeds and golden vectors. Add new ones at the end.
 enum nl_base_id {
   NL_BASE_NORMAL = 0,
   NL_BASE_FIRE,
   NL_BASE_TETRIS,
+  NL_BASE_RAINBOW,
+  NL_BASE_METEOR,
+  NL_BASE_TWINKLE,
+  NL_BASE_CONFETTI,
+  NL_BASE_BREATHE,
+  NL_BASE_EXPLOSION,
+  NL_BASE_STROBE,
+  NL_BASE_CANDLES,
+  NL_BASE_SNAKE,
+  NL_BASE_PONG,
+  NL_BASE_CHOMP,
+  NL_BASE_SORTING,
+  NL_BASE_AUTOMATON,
+  NL_BASE_HOURGLASS,
+  NL_BASE_BINARY_CLOCK,
+  NL_BASE_LAVA_LAMP,
+  NL_BASE_AURORA,
   NL_BASE_COUNT
 };
 
 enum nl_effect_id {
   NL_FX_MOTION = 0,
+  NL_FX_MIRROR,
+  NL_FX_SHIMMER,
+  NL_FX_SPARKLE,
+  NL_FX_CANDLE,
+  NL_FX_PULSE,
+  NL_FX_HEARTBEAT,
+  NL_FX_WAVE,
+  NL_FX_RAINBOW_SWEEP,
+  NL_FX_FIREFLIES,
+  NL_FX_FIREWORKS,
+  NL_FX_RAIN,
+  NL_FX_TRAFFIC,
+  NL_FX_DATA_STREAM,
+  NL_FX_BOUNCING_BALLS,
+  NL_FX_LASER_DUEL,
+  NL_FX_LIGHTNING,
+  NL_FX_SNOWFALL,
+  NL_FX_COMET,
+  NL_FX_GHOST,
+  NL_FX_SPOOKY_EYES,
+  NL_FX_BROWNOUT,
+  NL_FX_GLITCH,
+  NL_FX_EARTHQUAKE,
   NL_FX_COUNT
 };
 
@@ -92,6 +133,17 @@ uint32_t nl_program_bytes(const nl_program *p);
 #define NL_MAX_CATCHUP_MS 1000
 void nl_program_render(nl_program *p, int64_t t_ms, uint8_t *rgb);
 
+// Local time offset from UTC in seconds, for Binary clock. Hosts update it when
+// daylight saving changes. Default 0.
+void nl_program_set_utc_offset(nl_program *p, int32_t seconds);
+
+// Every base and effect with its group, description, flags and params, as JSON:
+// {"bases":[{"id","name","group","desc","stateful","ownColors","warn","params":[...]}],
+//  "effects":[{..., "moves", "color":"#rrggbb"|null, ...}]}, in display order.
+// Writes up to out_size bytes (always terminated) and returns the full length,
+// so a caller can retry with a bigger buffer.
+int nl_engine_describe(char *out, int out_size);
+
 // Names and parameter tables, for UIs and console commands.
 const char *nl_base_name(uint16_t base);
 uint8_t nl_base_flags(uint16_t base);          // 2 = stateful, as in nl_internal.h
@@ -111,6 +163,9 @@ void nl_config_set_seed(nl_config *cfg, uint32_t seed);
 // Appends an effect with its defaults; returns its index, or -1 when full.
 int nl_config_add_effect(nl_config *cfg, uint16_t type);
 void nl_config_set_effect_param(nl_config *cfg, uint8_t k, uint8_t i, float v);
+void nl_config_set_effect_instance(nl_config *cfg, uint8_t k, uint16_t instance);
+// mode is an nl_effect_color; the color only matters for NL_COLOR_CUSTOM.
+void nl_config_set_effect_color(nl_config *cfg, uint8_t k, uint8_t mode, uint8_t r, uint8_t g, uint8_t b);
 
 // Runs the golden vectors (nl_selftest.cpp) and writes one line per vector,
 // "name crc32", into out. Returns the length written.

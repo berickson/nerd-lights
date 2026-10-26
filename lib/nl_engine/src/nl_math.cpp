@@ -56,11 +56,35 @@ float log2f_(float x) {
 }
 
 float powf_(float x, float y) {
+  if (y == 0.0f) return 1.0f;
   if (x <= 0.0f) return 0.0f;
   if (x == 1.0f) return 1.0f;
   return exp2f_(y * log2f_(x));
 }
 
 float expf_(float x) { return exp2f_(x * 1.44269504089f); }
+
+float sqrtf_(float x) { return x <= 0.0f ? 0.0f : exp2f_(0.5f * log2f_(x)); }
+
+Col hsv(float h) {
+  h = (h - floorf_(h)) * 6.0f;
+  int i = ftoi_floor(h);
+  float f = h - (float)i, q = 1.0f - f;
+  switch (i % 6) {
+    case 0: return col(255, f * 255, 0);
+    case 1: return col(q * 255, 255, 0);
+    case 2: return col(0, 255, f * 255);
+    case 3: return col(0, q * 255, 255);
+    case 4: return col(f * 255, 0, 255);
+    default: return col(255, 0, q * 255);
+  }
+}
+
+Col ramp(const Col *s, int n, float h) {
+  if (n == 1) return s[0];
+  h = clampf(h, 0.0f, 0.999f) * (float)(n - 1);
+  int a = ftoi_floor(h);
+  return mix(s[a], s[a + 1], h - (float)a);
+}
 
 }  // namespace nl
