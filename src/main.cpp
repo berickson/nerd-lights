@@ -2083,6 +2083,8 @@ void publish_statistics() {
   statistics["firmware_version"] = FIRMWARE_VERSION;
   statistics["wifi_rssi"] = WiFi.RSSI();
   statistics["uptime_seconds"] = millis()/1000;
+  // Patterns run on NTP time once it is set (engine_time_ms); before that, on uptime.
+  statistics["clock_synced"] = time(nullptr) > 1700000000;
 
   // Frame-timing sample for this publish interval, then reset the counters.
   // Totals are in milliseconds so they can be read against window_ms directly:
