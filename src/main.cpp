@@ -3966,7 +3966,8 @@ static void engine_show_help(CommandEnvironment &env) {
         }
         env.cout.println();
     }
-    env.cout.println("effects (+name adds one; name.key=value sets the last one added):");
+    env.cout.println("effects (+name adds one; name.key=value sets the last one added;");
+    env.cout.println("         name.color=rrggbb, =base for the pattern's colors, =default):");
     for (uint16_t e = 0; nl_effect_name(e); e++) {
         env.cout.printf("  %s:", nl_effect_name(e));
         for (uint8_t i = 0; i < nl_effect_param_count(e); i++) {
@@ -4038,6 +4039,15 @@ void cmd_engine_show(CommandEnvironment &env) {
             for (int k = c.n_effects - 1; k >= 0 && !found; k--) {
                 uint16_t type = c.effects[k].type;
                 if (!engine_name_is(fx_name.c_str(), nl_effect_name(type))) continue;
+                if (fx_key.equalsIgnoreCase("color")) {
+                    // rrggbb, "base" for the pattern's colors, or "default"
+                    uint32_t v = strtoul(value, nullptr, 16);
+                    uint8_t mode = strcasecmp(value, "base") == 0 ? NL_COLOR_PATTERN
+                                 : strcasecmp(value, "default") == 0 ? NL_COLOR_DEFAULT : NL_COLOR_CUSTOM;
+                    nl_config_set_effect_color(&c, k, mode, v >> 16, v >> 8, v);
+                    found = true;
+                    break;
+                }
                 for (uint8_t i = 0; i < nl_effect_param_count(type); i++)
                     if (fx_key.equalsIgnoreCase(nl_effect_param(type, i)->key)) {
                         c.effects[k].params[i] = atof(value);
