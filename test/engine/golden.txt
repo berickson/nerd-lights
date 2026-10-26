@@ -28,7 +28,7 @@ meteor_reverse_300 9081175f
 lightning_storm_100 4196c61b
 strobe_one_color_10 0c34f2dd
 gamma_before_lava_100 3486f314
-gamma_after_breathe_36 a78ed874
+gamma_after_breathe_36 c56ff6b0
 linear_after_fire_36 a5f0f4ab
 layout_chain_60 26f7c112
 layout_copy_60 1b10ac88

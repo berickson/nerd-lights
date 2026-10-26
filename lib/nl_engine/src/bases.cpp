@@ -331,9 +331,12 @@ static void flicker_step(Program &p) {
 }
 
 // --- Breathe (original firmware) ---
-// One color breathes down to 5%; several crossfade one into the next.
+// One color breathes down to its lowest point; several crossfade one into the
+// next. The original went down to 5%, which is black once the controller
+// applies gamma, so the lowest point is a setting, 25% by default.
 static const nl_param_def BREATHE_PARAMS[] = {
   {"duration", "Duration", 0.25f, 10, 0.25f, "s", 1.5f},
+  {"lowest", "Lowest (one color)", 0, 100, 1, "%", 25},
 };
 
 static void breathe_prepare(Program &p) {
@@ -343,7 +346,8 @@ static void breathe_prepare(Program &p) {
   if (L == 1) {
     uint32_t ph = turns_q32(p.t_ms, 1, 2 * d);
     float amp = (1.0f - cos_turns(ph)) / 2.0f;
-    c = scale(p.colors[0], 0.05f + amp * 0.95f);
+    float lowest = bp(p, 1) / 100.0f;
+    c = scale(p.colors[0], lowest + amp * (1.0f - lowest));
   } else {
     int64_t pos = floor_mod(p.t_ms, d * L);
     int idx = (int)(pos / d);
