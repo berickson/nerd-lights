@@ -137,6 +137,14 @@ uint32_t nl_program_bytes(const nl_program *p);
 #define NL_MAX_CATCHUP_MS 1000
 void nl_program_render(nl_program *p, int64_t t_ms, uint8_t *rgb);
 
+// Output stage. The engine works in screen-like values (what the web preview
+// draws as-is). LEDs give off light in proportion to the value, so controllers
+// set gamma 2.2: the final float values go through a 4096-step gamma table to
+// 16-bit light, which rounds to a byte once. brightness_after_gamma scales that
+// light by the brightness (49% = 49% of the light) instead of scaling values
+// before gamma (even steps by eye). Defaults: gamma 1 (linear), before.
+void nl_program_set_output(nl_program *p, float gamma, uint8_t brightness_after_gamma);
+
 // Local time offset from UTC in seconds, for Binary clock. Hosts update it when
 // daylight saving changes. Default 0.
 void nl_program_set_utc_offset(nl_program *p, int32_t seconds);

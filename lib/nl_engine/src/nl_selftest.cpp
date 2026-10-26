@@ -21,6 +21,8 @@ struct Vector {
   int jump_ms;
   void (*setup)(nl_config &c);
   int32_t utc_offset_s;
+  float gamma;            // 0: no nl_program_set_output (linear)
+  uint8_t bright_after;
 };
 
 static void colors(nl_config &c, int count) {
@@ -113,6 +115,13 @@ static const Vector VECTORS[] = {
      nl_config_defaults(&c, NL_BASE_LIGHTNING); colors(c, 2); c.params[0] = 100; c.seed = 83; }},
   {"strobe_one_color_10", 10, T_2026, 60, 50, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_STROBE); colors(c, 1); c.params[0] = 5; }},
+  // Output gamma, as the controllers run it
+  {"gamma_before_lava_100", 100, T_2026, 60, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_LAVA_LAMP); colors(c, 2); c.brightness = 49; }, 0, 2.2f, 0},
+  {"gamma_after_breathe_36", 36, T_2026, 60, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_BREATHE); colors(c, 1); c.brightness = 49; }, 0, 2.2f, 1},
+  {"linear_after_fire_36", 36, T_2026, 30, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_FIRE); colors(c, 3); c.brightness = 30; }, 0, 1.0f, 1},
 };
 
 // "Rain & ripples" -> "rain_ripples"
@@ -146,10 +155,11 @@ static uint32_t crc32_update(uint32_t crc, const uint8_t *data, int len) {
 // One vector: render frames and print "name crc32".
 static int run_vector(const char *name, const nl_config &c, uint16_t n, int64_t t0, int frames,
                       int frame_ms, int jump_at, int jump_ms, int32_t utc_offset_s, uint8_t *rgb,
-                      char *out, int room) {
+                      char *out, int room, float gamma = 0.0f, uint8_t bright_after = 0) {
   nl_program *p = nl_program_create(&c, n);
   if (!p) return snprintf(out, room, "%s create-failed\n", name);
   nl_program_set_utc_offset(p, utc_offset_s);
+  if (gamma > 0.0f) nl_program_set_output(p, gamma, bright_after);
   uint32_t crc = 0xffffffffu;
   int64_t t = t0;
   for (int f = 0; f < frames; f++) {
@@ -176,7 +186,7 @@ extern "C" int nl_selftest(char *out, int out_size) {
     nl_config c;
     v.setup(c);
     room = add(run_vector(v.name, c, v.n, v.t0, v.frames, v.frame_ms, v.jump_at, v.jump_ms,
-                          v.utc_offset_s, rgb, out + used, out_size - used));
+                          v.utc_offset_s, rgb, out + used, out_size - used, v.gamma, v.bright_after));
     if (!room) break;
   }
   // Every base with its defaults and three colors, 60 s at 2 fps.

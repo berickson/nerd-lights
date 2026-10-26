@@ -98,6 +98,8 @@ struct Program {
   int64_t last_step_ms;
   int64_t t_ms;           // the frame being rendered
   int32_t utc_offset_s;   // for Binary clock
+  float out_gamma;        // nl_program_set_output; 0 until set, meaning 1
+  bool bright_after;
   Scratch s;
 };
 

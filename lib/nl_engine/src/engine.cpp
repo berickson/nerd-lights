@@ -150,6 +150,23 @@ extern "C" uint32_t nl_program_bytes(const nl_program *p) { return p->bytes; }
 
 extern "C" void nl_program_set_utc_offset(nl_program *p, int32_t seconds) { p->utc_offset_s = seconds; }
 
+extern "C" void nl_program_set_output(nl_program *p, float gamma, uint8_t brightness_after_gamma) {
+  p->out_gamma = clampf(gamma, 0.5f, 4.0f);
+  p->bright_after = brightness_after_gamma != 0;
+}
+
+// Light (0-65535) for value k * 255/4095, at gamma g. Programs on one host share
+// a gamma, so one table is kept and rebuilt when the gamma changes.
+static const uint16_t *gamma_table(float g) {
+  static uint16_t table[4096];
+  static float built = 0.0f;
+  if (built != g) {
+    for (int k = 0; k < 4096; k++) table[k] = (uint16_t)roundi(65535.0f * powf_((float)k / 4095.0f, g));
+    built = g;
+  }
+  return table;
+}
+
 static void advance(Program &p, int64_t t_ms) {
   if (!p.started || t_ms < p.last_step_ms || t_ms - p.last_step_ms > NL_MAX_CATCHUP_MS) {
     p.started = true;
@@ -253,6 +270,9 @@ extern "C" void nl_program_render(nl_program *pp, int64_t t_ms, uint8_t *rgb) {
   }
 
   const float bright = (float)p.cfg.brightness / 100.0f;
+  const bool linear = !(p.out_gamma > 0.0f) || p.out_gamma == 1.0f;
+  const uint16_t *table = linear ? nullptr : gamma_table(p.out_gamma);
+  const uint32_t light_scale = p.bright_after ? p.cfg.brightness : 100;
   for (int i = 0; i < n; i++) {
     Col v = S[i];
     for (int k = 0; k < p.n_fx; k++) {
@@ -266,9 +286,21 @@ extern "C" void nl_program_render(nl_program *pp, int64_t t_ms, uint8_t *rgb) {
       }
     }
     uint8_t *o = rgb + i * 3;
-    o[0] = (uint8_t)ftoi_floor(clampf(v.r * bright, 0.0f, 255.0f) + 0.5f);
-    o[1] = (uint8_t)ftoi_floor(clampf(v.g * bright, 0.0f, 255.0f) + 0.5f);
-    o[2] = (uint8_t)ftoi_floor(clampf(v.b * bright, 0.0f, 255.0f) + 0.5f);
+    if (linear && !p.bright_after) {
+      o[0] = (uint8_t)ftoi_floor(clampf(v.r * bright, 0.0f, 255.0f) + 0.5f);
+      o[1] = (uint8_t)ftoi_floor(clampf(v.g * bright, 0.0f, 255.0f) + 0.5f);
+      o[2] = (uint8_t)ftoi_floor(clampf(v.b * bright, 0.0f, 255.0f) + 0.5f);
+      continue;
+    }
+    // Still floats here: through gamma to 16-bit light, scaled by brightness
+    // when it applies after gamma, then one rounding to a byte.
+    const float pre = p.bright_after ? 1.0f : bright;
+    const float ch[3] = {v.r, v.g, v.b};
+    for (int c = 0; c < 3; c++) {
+      float x = clampf(ch[c] * pre, 0.0f, 255.0f);
+      uint32_t light = table ? table[roundi(x * (4095.0f / 255.0f))] : (uint32_t)roundi(x * 257.0f);
+      o[c] = (uint8_t)((light * light_scale + 12850) / 25700);
+    }
   }
 }
 

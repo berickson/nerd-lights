@@ -27,6 +27,9 @@ explosion_cap_1000 a93d9893
 meteor_reverse_300 9081175f
 lightning_storm_100 4196c61b
 strobe_one_color_10 0c34f2dd
+gamma_before_lava_100 3486f314
+gamma_after_breathe_36 a78ed874
+linear_after_fire_36 a5f0f4ab
 base_rainbow_36 c185a2b4
 base_meteor_36 a0d01687
 base_twinkle_36 22ef568e
