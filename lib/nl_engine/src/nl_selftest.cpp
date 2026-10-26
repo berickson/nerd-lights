@@ -98,6 +98,8 @@ static const Vector VECTORS[] = {
      nl_config_defaults(&c, NL_BASE_AURORA); }},
   {"candles_spaced_100", 100, T_2026, 30, 250, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_CANDLES); c.params[0] = 4; c.params[2] = 20; }},
+  {"candles_warmth_20_36", 36, T_2026, 30, 250, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_CANDLES); colors(c, 2); c.params[4] = 20; }},
   {"pong_5px", 5, T_2026, 60, 100, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_PONG); colors(c, 2); }},
   {"sorting_1000", 1000, T_2026, 40, 500, 0, 0, [](nl_config &c) {

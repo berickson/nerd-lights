@@ -470,6 +470,7 @@ static const nl_param_def CANDLES_PARAMS[] = {
   {"flicker", "Flicker", 0, 100, 1, "%", 55},
   {"wind", "Drafts", 0, 20, 1, "/min", 6},
   {"glow", "Glare", 0, 100, 1, "%", 35},
+  {"warmth", "Warmth", 0, 100, 1, "%", 50},
 };
 
 static void candles_frame(Program &p, Col *a) {
@@ -488,8 +489,15 @@ static void candles_frame(Program &p, Col *a) {
   int64_t t1 = scale_q16(T, 19, 10000), t2 = scale_q16(T, 67, 10000), t3 = scale_q16(T, 16, 1000);
   uint32_t ph23 = rad_q32(T, 23, 1);
   float gh = bp(p, 3) / 100.0f * 0.3f;
+  // Warmth: 50% shows the colors as chosen; lower pales the weaker channels
+  // toward white-yellow, higher deepens them toward orange-red, and the
+  // flames redden more as they dip.
+  const float wx = bp(p, 4) / 50.0f;
+  const float eg = 1.0f + 0.7f * wx, eb = 1.0f + 1.4f * wx;
   for (int i = 0; i < n; i += sp) {
-    const Col &c = C[(i / sp) % CL];
+    const Col &c0 = C[(i / sp) % CL];
+    const Col c = col(255.0f * powf_(c0.r / 255.0f, wx), 255.0f * powf_(c0.g / 255.0f, wx),
+                      255.0f * powf_(c0.b / 255.0f, wx));
     float sd = (float)i * 3.7f + hb(i, 13) * 50.0f, size = 0.78f + 0.22f * hb(i, 14);
     float k = 1.0f - fl * (0.32f * value_noise(t1 + q16(sd)) + 0.22f * value_noise(t2 + q16(sd * 1.7f)) +
                            0.14f * value_noise(t3 + q16(sd * 0.3f)));
@@ -498,7 +506,7 @@ static void candles_frame(Program &p, Col *a) {
       k *= 1.0f - gust * expf_(-e * e) * 0.75f * (0.55f + 0.45f * sin_turns(ph23 + rad_to_q32(sd)));
     }
     k = maxf(0.04f, k * size);
-    Col cc = col(c.r * k, c.g * powf_(k, 1.7f), c.b * powf_(k, 2.4f));
+    Col cc = col(c.r * k, c.g * powf_(k, eg), c.b * powf_(k, eb));
     put(a, n, (float)i, cc);
     if (gh > 0.0f && sp > 1)
       for (int d = 1; d <= 3 && d <= sp - 1; d++) {
@@ -1011,7 +1019,7 @@ const BaseDef BASES[NL_BASE_COUNT] = {
    F_WARN, STROBE_PARAMS, COUNT(STROBE_PARAMS), STATELESS(uniform_sample, nullptr, strobe_prepare)},
   {"Candles", "Scenic",
    "Every pixel (or every few) is its own candle: independent flicker, warmer when it dips, a soft "
-   "glare around each flame, and the odd draft rolling through.",
+   "glare around each flame, and the odd draft rolling through. Warmth turns the flames paler or deeper.",
    0, CANDLES_PARAMS, COUNT(CANDLES_PARAMS), FRAME(candles_frame)},
   {"Snake", "Games",
    "The snake slides back and forth hunting the blinking food pixel and grows with every bite. "

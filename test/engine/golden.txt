@@ -19,6 +19,7 @@ color_modes_100 4f302ddb
 binary_clock_tz_36 d3c46d1f
 aurora_nocolor_100 c67d1793
 candles_spaced_100 209bcda1
+candles_warmth_20_36 9f9a814f
 pong_5px 7565b3f3
 sorting_1000 bcf08ba3
 automaton_rule110_300 6e01e6bc
