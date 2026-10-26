@@ -3004,7 +3004,7 @@ void setup() {
   commands.emplace_back(
     Command("engine_off", cmd_engine_off, "Stop engine_show and go back to normal rendering"));
   commands.emplace_back(
-    Command("engine_gamma", cmd_engine_gamma, "Show or set the output gamma for engine_show (1.0 = linear, as today; not saved)"));
+    Command("engine_gamma", cmd_engine_gamma, "Show or set engine_show's output gamma and when brightness applies: [gamma] [before|after] (default 2.2 before; not saved)"));
   commands.emplace_back(
     Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
   commands.emplace_back(
@@ -3909,25 +3909,59 @@ static int32_t engine_utc_offset_s() {
     return d + days * 86400;
 }
 
-// Output gamma for engine_show, to try matching LED light to the web preview.
-// 1.0 is linear: the value sent is the light given off, as the original
-// patterns always ran.
-static float engine_gamma = 1.0f;
+// Output gamma. The engine works in screen-like values (what the web preview
+// draws); LEDs give off light in proportion to the value, so the controller
+// applies gamma 2.2 to match. 1.0 is linear, as the original patterns ran.
+static float engine_gamma = 2.2f;
 static uint8_t engine_gamma_lut[256];
+static bool engine_gamma_ready = false;
+// Brightness applies before gamma (in the engine: even steps by eye, but a
+// zone at 49% gives off 21% of the light) or after it (49% is 49% of the light,
+// as the original firmware's brightness was). Being compared on Test.
+static bool engine_bright_after = false;
+static nl_config engine_show_cfg;
+static uint8_t engine_show_bright = 100;
+
+static void engine_build_gamma() {
+    for (int i = 0; i < 256; i++)
+        engine_gamma_lut[i] = (uint8_t)(255.0f * powf(i / 255.0f, engine_gamma) + 0.5f);
+    engine_gamma_ready = true;
+}
+
+// (Re)create the engine_show program from engine_show_cfg.
+static nl_program *engine_show_start() {
+    nl_config c = engine_show_cfg;
+    c.brightness = engine_bright_after ? 100 : engine_show_bright;
+    nl_program *p = nl_program_create(&c, led_count);
+    if (!p) return nullptr;
+    nl_program_set_utc_offset(p, engine_utc_offset_s());
+    nl_program *old = engine_show_program;
+    engine_show_program = p;   // loop() and console commands run on the same task
+    nl_program_free(old);
+    return p;
+}
 
 void cmd_engine_gamma(CommandEnvironment &env) {
-    const char *arg = env.args.getCmdParam(1);
-    if (arg) {
-        float g = atof(arg);
-        if (g < 0.5f || g > 4.0f) {
-            env.cout.println("ERROR: gamma must be 0.5-4.0 (1.0 = linear)");
-            return;
+    bool was_after = engine_bright_after;
+    for (int a = 1; env.args.getCmdParam(a); a++) {
+        const char *arg = env.args.getCmdParam(a);
+        if (strcasecmp(arg, "before") == 0) {
+            engine_bright_after = false;
+        } else if (strcasecmp(arg, "after") == 0) {
+            engine_bright_after = true;
+        } else {
+            float g = atof(arg);
+            if (g < 0.5f || g > 4.0f) {
+                env.cout.println("ERROR: engine_gamma [0.5-4.0] [before|after]");
+                return;
+            }
+            engine_gamma = g;
+            engine_build_gamma();
         }
-        engine_gamma = g;
-        for (int i = 0; i < 256; i++)
-            engine_gamma_lut[i] = (uint8_t)(255.0f * powf(i / 255.0f, g) + 0.5f);
     }
-    env.cout.printf("engine_gamma %.2f%s\n", engine_gamma, engine_gamma == 1.0f ? " (linear)" : "");
+    if (engine_bright_after != was_after && engine_show_program) engine_show_start();
+    env.cout.printf("engine_gamma %.2f%s, brightness applied %s gamma\n", engine_gamma,
+                    engine_gamma == 1.0f ? " (linear)" : "", engine_bright_after ? "after" : "before");
 }
 
 void render_engine_show() {
@@ -3938,8 +3972,11 @@ void render_engine_show() {
         offset_checked_ms = millis();
     }
     nl_program_render(engine_show_program, engine_time_ms(), rgb);
+    if (!engine_gamma_ready) engine_build_gamma();
     if (engine_gamma != 1.0f)
         for (int i = 0; i < led_count * 3; i++) rgb[i] = engine_gamma_lut[rgb[i]];
+    if (engine_bright_after && engine_show_bright < 100)
+        for (int i = 0; i < led_count * 3; i++) rgb[i] = (uint8_t)((rgb[i] * engine_show_bright + 50) / 100);
     for (int i = 0; i < led_count; i++)
         leds[i] = Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
 }
@@ -4085,19 +4122,18 @@ void cmd_engine_show(CommandEnvironment &env) {
         }
     }
 
-    nl_program *p = nl_program_create(&c, led_count);
+    engine_show_cfg = c;
+    engine_show_bright = c.brightness;
+    nl_program *p = engine_show_start();
     if (!p) {
         env.cout.println("ERROR: could not create the program");
         return;
     }
-    nl_program_set_utc_offset(p, engine_utc_offset_s());
-    nl_program *old = engine_show_program;
-    engine_show_program = p;   // loop() and console commands run on the same task
-    nl_program_free(old);
     env.cout.printf("showing %s", nl_base_name(base));
     for (int k = 0; k < c.n_effects; k++) env.cout.printf(" + %s", nl_effect_name(c.effects[k].type));
-    env.cout.printf(" on %d px, %s clock, %u bytes\n", led_count,
-                    engine_clock_synced() ? "NTP" : "uptime (not synced)", nl_program_bytes(p));
+    env.cout.printf(" on %d px, %s clock, %u bytes, gamma %.1f (brightness %s)\n", led_count,
+                    engine_clock_synced() ? "NTP" : "uptime (not synced)", nl_program_bytes(p),
+                    engine_gamma, engine_bright_after ? "after" : "before");
 }
 
 void cmd_engine_off(CommandEnvironment &env) {

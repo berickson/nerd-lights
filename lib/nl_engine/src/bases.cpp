@@ -166,10 +166,12 @@ static Col gradient_sample(const Program &p, int64_t xq) {
 // --- Meteor (original firmware) ---
 // Back-to-back meteors, one per color, fill the zone and move together. The
 // head is bright and the tail fades behind it, whichever way they move.
+// Values here are screen-like: controllers apply gamma 2.2 on output, so the
+// tail exponent is the original's divided by 2.2 for the same light.
 static const nl_param_def METEOR_PARAMS[] = {
   {"speed", "Speed", -1000, 1000, 1, "px/s", 20},
   {"length", "Length", 5, 500, 1, "px", 50},
-  {"tail", "Tail fade", 0.1f, 10, 0.1f, "", 2.8f},
+  {"tail", "Tail fade", 0.1f, 10, 0.1f, "", 1.3f},   // the original's 2.8, over gamma 2.2
 };
 
 static void meteor_prepare(Program &p) {
@@ -255,7 +257,7 @@ static void twinkle_frame(Program &p, Col *a) {
     if (elapsed >= 1000.0f) return;
     Col c = L >= 2 ? p.colors[1 + ftoi_floor(hb(k, 42) * (float)(L - 1))] : p.colors[0];
     float level = 1.0f - absf(elapsed - 500.0f) / 500.0f;
-    a[pixel] = mix(bg, c, level * level);
+    a[pixel] = mix(bg, c, level);   // the original squared this for linear LEDs
   });
 }
 
@@ -278,7 +280,7 @@ static void explosion_frame(Program &p, Col *a) {
     int R = 5 + ftoi_floor(hb(k, 45) * 10.0f);
     Col c = p.colors[ftoi_floor(hb(k, 46) * (float)p.n_colors)];
     int r = ftoi_floor((float)R * elapsed / 1000.0f);
-    float percent = (float)((R - r) * (R - r)) / (float)(R * R);
+    float percent = (float)(R - r) / (float)R;   // the original squared this for linear LEDs
     for (int x = -R; x <= R; x++) {
       int i = center + x, d = x < 0 ? -x : x;
       if (i >= 0 && i < n && (d - r < 2 && r - d < 2)) a[i] = mix(a[i], c, percent);
