@@ -3953,8 +3953,9 @@ static void engine_show_help(CommandEnvironment &env) {
 }
 
 void cmd_engine_show(CommandEnvironment &env) {
-    int count = env.args.getParamCount();
-    const char *name = count > 1 ? env.args.getCmdParam(1) : nullptr;
+    // getParamCount() misses the last word (CmdParser stops before the string's
+    // terminator), so walk the words until getCmdParam returns null instead.
+    const char *name = env.args.getCmdParam(1);
     int base = -1;
     for (uint16_t b = 0; name && nl_base_name(b); b++)
         if (engine_name_is(name, nl_base_name(b))) base = b;
@@ -3970,9 +3971,9 @@ void cmd_engine_show(CommandEnvironment &env) {
     c.n_colors = 3;
     memcpy(c.colors, defaults, sizeof(defaults));
     int motion = -1;
-    for (int a = 2; a < count; a++) {
+    for (int a = 2; env.args.getCmdParam(a); a++) {
         const char *arg = env.args.getCmdParam(a);
-        if (arg && arg[0] == '+') {
+        if (arg[0] == '+') {
             int type = -1;
             for (uint16_t e = 0; nl_effect_name(e); e++)
                 if (engine_name_is(arg + 1, nl_effect_name(e))) type = e;
