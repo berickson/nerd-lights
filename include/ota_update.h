@@ -118,6 +118,16 @@ void do_ota_upgrade(String host, int port, String bin, int command = U_FLASH) {
       // No activity would appear on the Serial monitor
       // So be patient. This may take 2 - 5mins to complete
       Serial.println("Begin writing stream to updater");
+      // One line per 64KB, so a stall shows where it stopped and whether
+      // WiFi went with it, without needing a debug build.
+      Update.onProgress([](size_t done, size_t total) {
+        static size_t last = 0;
+        if (done < last || done - last >= 65536 || done == total) {
+          last = done;
+          Serial.printf("[ota] %u/%u ms=%lu wifi=%d rssi=%d\n", (unsigned)done, (unsigned)total,
+                        millis(), (int)WiFi.status(), (int)WiFi.RSSI());
+        }
+      });
       size_t written = Update.writeStream(client);
       Serial.println("Done writing stream to updater");
 

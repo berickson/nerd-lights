@@ -2815,6 +2815,10 @@ void do_ota_upgrade(bool upgrade_spiffs = false) {
     delay(500);
   }
   Serial.println("connected, doing upgrade");
+  // Keep the radio awake for the download. With modem sleep (the default),
+  // firmware upgrades on Test repeatedly stalled at ~64KB and timed out,
+  // while SPIFFS downloads of 1.4MB never did (2026-10-25/26).
+  WiFi.setSleep(false);
   if(upgrade_spiffs) {
     display.clear();
     display.drawString(0,0,"Upgrading SPIFFS");
