@@ -144,6 +144,10 @@ int global_brightness = 100; // 0-100%, applied as post-processing
 void cmd_pattern_list(CommandEnvironment &env);
 void cmd_engine_selftest(CommandEnvironment &env);
 void cmd_engine_bench(CommandEnvironment &env);
+void cmd_engine_show(CommandEnvironment &env);
+void cmd_engine_off(CommandEnvironment &env);
+void render_engine_show();
+nl_program *engine_show_program = nullptr;  // set by engine_show; replaces normal rendering
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
@@ -2993,6 +2997,10 @@ void setup() {
   commands.emplace_back(
     Command("engine_bench", cmd_engine_bench, "Time pattern engine frames at 1000 pixels"));
   commands.emplace_back(
+    Command("engine_show", cmd_engine_show, "Show a pattern engine pattern on the strip: <pattern> [key=value ...], see engine_show help"));
+  commands.emplace_back(
+    Command("engine_off", cmd_engine_off, "Stop engine_show and go back to normal rendering"));
+  commands.emplace_back(
     Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
   commands.emplace_back(
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
@@ -3738,7 +3746,9 @@ Below stuff would be good for a config page
     // }
 
     uint32_t draw_phase_us = micros();
-    if(lights_on) {
+    if(engine_show_program) {
+      render_engine_show();
+    } else if(lights_on) {
       // Use pattern system
       render_with_pattern_system();
     } else {
@@ -3851,6 +3861,122 @@ void cmd_engine_bench(CommandEnvironment &env) {
     c.colors[0] = {0, 255, 255}; c.colors[1] = {255, 184, 0}; c.colors[2] = {255, 0, 255};
     engine_bench_one(env, "tetris", c);
     env.cout.printf("free heap %u bytes\n", ESP.getFreeHeap());
+}
+
+// Unix milliseconds once NTP has set the clock (configTime in esp32-common.h),
+// uptime before that. The switch can cause one small jump in the pattern.
+static bool engine_clock_synced() {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return tv.tv_sec > 1700000000;
+}
+
+static int64_t engine_time_ms() {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    if (tv.tv_sec > 1700000000) return (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    return millis();
+}
+
+void render_engine_show() {
+    static uint8_t rgb[max_led_count * 3];
+    nl_program_render(engine_show_program, engine_time_ms(), rgb);
+    for (int i = 0; i < led_count; i++)
+        leds[i] = Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+}
+
+static void engine_show_help(CommandEnvironment &env) {
+    env.cout.println("engine_show <pattern> [key=value ...]");
+    for (uint16_t b = 0; nl_base_name(b); b++) {
+        env.cout.printf("  %s:", nl_base_name(b));
+        for (uint8_t i = 0; i < nl_base_param_count(b); i++) {
+            const nl_param_def *d = nl_base_param(b, i);
+            env.cout.printf(" %s=%g..%g%s", d->key, d->min, d->max, d->unit);
+        }
+        env.cout.println();
+    }
+    env.cout.println("  any pattern: motion=<px/s> swing=<px> smooth=<%> bright=<1-100>");
+    env.cout.println("               colors=rrggbb,rrggbb,... (up to 8)");
+    env.cout.println("engine_off goes back to normal rendering");
+}
+
+void cmd_engine_show(CommandEnvironment &env) {
+    int count = env.args.getParamCount();
+    const char *name = count > 1 ? env.args.getCmdParam(1) : nullptr;
+    int base = -1;
+    for (uint16_t b = 0; name && nl_base_name(b); b++)
+        if (strcasecmp(name, nl_base_name(b)) == 0) base = b;
+    if (base < 0) {
+        engine_show_help(env);
+        return;
+    }
+
+    nl_config c;
+    nl_config_defaults(&c, base);
+    c.seed = 1;
+    static const nl_rgb defaults[] = {{0, 255, 255}, {255, 184, 0}, {255, 0, 255}};
+    c.n_colors = 3;
+    memcpy(c.colors, defaults, sizeof(defaults));
+    int motion = -1;
+    for (int a = 2; a < count; a++) {
+        const char *arg = env.args.getCmdParam(a);
+        const char *eq = arg ? strchr(arg, '=') : nullptr;
+        if (!eq) {
+            env.cout.printf("ERROR: expected key=value, got %s\n", arg ? arg : "");
+            return;
+        }
+        String key(arg);
+        key = key.substring(0, eq - arg);
+        const char *value = eq + 1;
+        bool found = false;
+        for (uint8_t i = 0; i < nl_base_param_count(base); i++) {
+            if (key.equalsIgnoreCase(nl_base_param(base, i)->key)) {
+                c.params[i] = atof(value);
+                found = true;
+            }
+        }
+        if (found) continue;
+        if (key == "motion" || key == "swing" || key == "smooth") {
+            if (motion < 0) {
+                motion = c.n_effects++;
+                nl_effect_defaults(&c.effects[motion], NL_FX_MOTION);
+            }
+            int i = key == "motion" ? 0 : key == "swing" ? 1 : 2;
+            c.effects[motion].params[i] = atof(value);
+        } else if (key == "bright") {
+            c.brightness = (uint8_t)constrain(atoi(value), 1, 100);
+        } else if (key == "colors") {
+            c.n_colors = 0;
+            for (const char *h = value; *h && c.n_colors < NL_MAX_COLORS;) {
+                uint32_t v = strtoul(h, nullptr, 16);
+                c.colors[c.n_colors++] = nl_rgb{(uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v};
+                const char *comma = strchr(h, ',');
+                if (!comma) break;
+                h = comma + 1;
+            }
+        } else {
+            env.cout.printf("ERROR: unknown key %s (try engine_show help)\n", key.c_str());
+            return;
+        }
+    }
+
+    nl_program *p = nl_program_create(&c, led_count);
+    if (!p) {
+        env.cout.println("ERROR: could not create the program");
+        return;
+    }
+    nl_program *old = engine_show_program;
+    engine_show_program = p;   // loop() and console commands run on the same task
+    nl_program_free(old);
+    env.cout.printf("showing %s on %d px, %s clock\n", nl_base_name(base), led_count,
+                    engine_clock_synced() ? "NTP" : "uptime (not synced)");
+}
+
+void cmd_engine_off(CommandEnvironment &env) {
+    nl_program *old = engine_show_program;
+    engine_show_program = nullptr;
+    nl_program_free(old);
+    env.cout.println("engine_show off, back to normal rendering");
 }
 
 // ============================================================================

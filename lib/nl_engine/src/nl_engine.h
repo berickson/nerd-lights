@@ -92,6 +92,26 @@ uint32_t nl_program_bytes(const nl_program *p);
 #define NL_MAX_CATCHUP_MS 1000
 void nl_program_render(nl_program *p, int64_t t_ms, uint8_t *rgb);
 
+// Names and parameter tables, for UIs and console commands.
+const char *nl_base_name(uint16_t base);
+uint8_t nl_base_flags(uint16_t base);          // 2 = stateful, as in nl_internal.h
+uint8_t nl_base_param_count(uint16_t base);
+const nl_param_def *nl_base_param(uint16_t base, uint8_t i);
+const char *nl_effect_name(uint16_t type);
+uint8_t nl_effect_param_count(uint16_t type);
+const nl_param_def *nl_effect_param(uint16_t type, uint8_t i);
+
+// Setters, so hosts without the struct layout (JavaScript) can fill a config.
+uint32_t nl_config_size(void);
+void nl_config_set_param(nl_config *cfg, uint8_t i, float v);
+void nl_config_set_colors(nl_config *cfg, uint8_t n);
+void nl_config_set_color(nl_config *cfg, uint8_t j, uint8_t r, uint8_t g, uint8_t b);
+void nl_config_set_brightness(nl_config *cfg, uint8_t brightness);
+void nl_config_set_seed(nl_config *cfg, uint32_t seed);
+// Appends an effect with its defaults; returns its index, or -1 when full.
+int nl_config_add_effect(nl_config *cfg, uint16_t type);
+void nl_config_set_effect_param(nl_config *cfg, uint8_t k, uint8_t i, float v);
+
 // Runs the golden vectors (nl_selftest.cpp) and writes one line per vector,
 // "name crc32", into out. Returns the length written.
 int nl_selftest(char *out, int out_size);

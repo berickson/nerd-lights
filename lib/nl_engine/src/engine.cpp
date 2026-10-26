@@ -159,3 +159,36 @@ extern "C" void nl_program_render(nl_program *pp, int64_t t_ms, uint8_t *rgb) {
     o[2] = (uint8_t)ftoi_floor(clampf(v.b * bright, 0.0f, 255.0f) + 0.5f);
   }
 }
+
+extern "C" const char *nl_base_name(uint16_t b) { return b < NL_BASE_COUNT ? BASES[b].name : nullptr; }
+extern "C" uint8_t nl_base_flags(uint16_t b) { return b < NL_BASE_COUNT ? BASES[b].flags : 0; }
+extern "C" uint8_t nl_base_param_count(uint16_t b) { return b < NL_BASE_COUNT ? BASES[b].n_params : 0; }
+extern "C" const nl_param_def *nl_base_param(uint16_t b, uint8_t i) {
+  return b < NL_BASE_COUNT && i < BASES[b].n_params ? &BASES[b].params[i] : nullptr;
+}
+extern "C" const char *nl_effect_name(uint16_t t) { return t < NL_FX_COUNT ? EFFECTS[t].name : nullptr; }
+extern "C" uint8_t nl_effect_param_count(uint16_t t) { return t < NL_FX_COUNT ? EFFECTS[t].n_params : 0; }
+extern "C" const nl_param_def *nl_effect_param(uint16_t t, uint8_t i) {
+  return t < NL_FX_COUNT && i < EFFECTS[t].n_params ? &EFFECTS[t].params[i] : nullptr;
+}
+
+extern "C" uint32_t nl_config_size(void) { return sizeof(nl_config); }
+extern "C" void nl_config_set_param(nl_config *c, uint8_t i, float v) {
+  if (i < NL_MAX_PARAMS) c->params[i] = v;
+}
+extern "C" void nl_config_set_colors(nl_config *c, uint8_t n) {
+  c->n_colors = n > NL_MAX_COLORS ? NL_MAX_COLORS : n;
+}
+extern "C" void nl_config_set_color(nl_config *c, uint8_t j, uint8_t r, uint8_t g, uint8_t b) {
+  if (j < NL_MAX_COLORS) c->colors[j] = nl_rgb{r, g, b};
+}
+extern "C" void nl_config_set_brightness(nl_config *c, uint8_t v) { c->brightness = v; }
+extern "C" void nl_config_set_seed(nl_config *c, uint32_t seed) { c->seed = seed; }
+extern "C" int nl_config_add_effect(nl_config *c, uint16_t type) {
+  if (c->n_effects >= NL_MAX_EFFECTS) return -1;
+  nl_effect_defaults(&c->effects[c->n_effects], type);
+  return c->n_effects++;
+}
+extern "C" void nl_config_set_effect_param(nl_config *c, uint8_t k, uint8_t i, float v) {
+  if (k < c->n_effects && i < NL_MAX_PARAMS) c->effects[k].params[i] = v;
+}
