@@ -197,8 +197,8 @@ void add_mdns_services()
 
     Serial.print("connection info set to ssid: ");
     Serial.print(ssid);
-    Serial.print(" password: ");
-    Serial.print(password);
+    // Never print the password: serial output reaches anyone with a cable.
+    Serial.print(password.length() ? " (password set)" : " (no password)");
     Serial.println();
   }
 
@@ -301,9 +301,11 @@ void cmd_set_wifi_config(CommandEnvironment & env) {
   preferences.begin("main",true);
   env.cout.print("ssid set to \"");
   env.cout.print(preferences.getString("ssid"));
-  env.cout.print("\", password set to \"");
-  env.cout.print(preferences.getString("password"));
-  env.cout.print("\"");
+  // Report only that a password was stored. This reply also goes out over
+  // MQTT (commands/result), and the broker allows anonymous subscribers.
+  env.cout.print("\", password set (");
+  env.cout.print(preferences.getString("password").length());
+  env.cout.print(" characters)");
   env.cout.println();
   preferences.end();
 }
