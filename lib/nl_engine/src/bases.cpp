@@ -531,19 +531,20 @@ static void candles_frame(Program &p, Col *a) {
 // --- Lava lamp ---
 static const nl_param_def LAVA_PARAMS[] = {
   {"blobs", "Blobs", 1, 8, 1, "", 4},
-  {"size", "Blob size", 2, 40, 1, "px", 8},
+  {"size", "Blob width", 2, 80, 1, "px", 16},   // average lights per blob
   {"speed", "Pace", 1, 100, 1, "", 30},
 };
 
 static void lava_frame(Program &p, Col *a) {
   const int n = p.n, nb = bpi(p, 0);
   const int64_t T = p.t_ms, pace = bpi(p, 2);
-  Col bg = scale(pal(p, 1), 0.18f), fg = pal(p, 0);
+  // The second color is the background as chosen; with one color, black.
+  Col bg = p.raw_colors >= 2 ? p.colors[1] : BLACK, fg = pal(p, 0);
   float bx[8], br[8];
   for (int j = 0; j < nb; j++) {
     int64_t rm = 300 + ftoi_floor(hb(j, 30) * 500.0f);   // 0.3 + 0.5 * hsh, thousandths
     bx[j] = n * (0.5f + 0.45f * sin_turns(rad_q32(T, pace * rm, 100000) + rad_to_q32(j * 2.1f)));
-    br[j] = bp(p, 1) * (0.7f + 0.6f * hb(j, 31)) *
+    br[j] = bp(p, 1) * 0.5f * (0.7f + 0.6f * hb(j, 31)) *
             (1.0f + 0.3f * sin_turns(rad_q32(T, pace, 100) + rad_to_q32((float)j)));
   }
   for (int i = 0; i < n; i++) {
@@ -1065,7 +1066,7 @@ const BaseDef BASES[NL_BASE_COUNT] = {
    "bit first. A lit block is a 1.",
    0, nullptr, 0, FRAME(binary_clock_frame)},
   {"Lava lamp", "Scenic",
-   "Soft blobs of your first color drift up and down through your second, merging and splitting.",
+   "Soft blobs of your first color drift up and down through your second (black if you pick only one), merging and splitting.",
    0, LAVA_PARAMS, COUNT(LAVA_PARAMS), FRAME(lava_frame)},
   {"Aurora", "Scenic", "Slow, shifting curtains of color, like the northern lights.",
    0, AURORA_PARAMS, COUNT(AURORA_PARAMS), FRAME(aurora_frame)},
