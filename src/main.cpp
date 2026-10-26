@@ -1653,6 +1653,14 @@ bool parse_server(String s, String & host, uint16_t & port) {
       return false;
     }
   }
+  // Only our own domain. The broker allows anonymous clients, so anyone who
+  // can reach it can send console commands. Without this check, `server`
+  // could point a controller at a stranger's broker, and then at their
+  // firmware. Brian controls nerdlights.net's DNS, so every name it accepts
+  // leads to his servers.
+  if(s != default_server_host && !s.endsWith(String(".") + default_server_host)) {
+    return false;
+  }
   host = s;
   return true;
 }
@@ -1698,7 +1706,7 @@ void cmd_server(CommandEnvironment & env) {
     arg = default_server_host;
   }
   if(!parse_server(arg, host, port)) {
-    env.cerr.println("usage: server [host[:port]], e.g. server staging.nerdlights.net:1884");
+    env.cerr.println("usage: server [host[:port]] with host nerdlights.net or *.nerdlights.net, e.g. server staging.nerdlights.net:1884");
     env.ok = false;
     return;
   }
