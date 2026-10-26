@@ -29,6 +29,7 @@
 #include "Pushbutton.h"
 
 #include "ota_update.h" // for OTA update
+#include "nl_engine.h"  // shared pattern engine (lib/nl_engine), not yet used for rendering
 
 const char * pref_do_ota_on_boot = "ota_firmware";
 const char * pref_do_ota_spiffs_on_boot = "ota_spiffs";
@@ -141,6 +142,8 @@ int global_brightness = 100; // 0-100%, applied as post-processing
 
 // Forward declarations for functions defined after pattern classes
 void cmd_pattern_list(CommandEnvironment &env);
+void cmd_engine_selftest(CommandEnvironment &env);
+void cmd_engine_bench(CommandEnvironment &env);
 void cmd_pattern_info(CommandEnvironment &env);
 void cmd_pattern_discover(CommandEnvironment &env);
 void cmd_pattern_set(CommandEnvironment &env);
@@ -2986,6 +2989,10 @@ void setup() {
   commands.emplace_back(
     Command("pattern_info", cmd_pattern_info, "Show pattern information [pattern_name]"));
   commands.emplace_back(
+    Command("engine_selftest", cmd_engine_selftest, "Run the pattern engine's golden vectors and print a checksum per vector"));
+  commands.emplace_back(
+    Command("engine_bench", cmd_engine_bench, "Time pattern engine frames at 1000 pixels"));
+  commands.emplace_back(
     Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
   commands.emplace_back(
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
@@ -3781,6 +3788,69 @@ Below stuff would be good for a config page
   delay(10);
 
   last_loop_ms = loop_ms;
+}
+
+// ============================================================================
+// Pattern engine (lib/nl_engine) test commands
+// ============================================================================
+
+// Output matches test/engine/golden.txt when the ESP32 renders exactly like
+// the WebAssembly build.
+void cmd_engine_selftest(CommandEnvironment &env) {
+    const int size = 2048;
+    char *out = (char *)malloc(size);
+    if (!out) {
+        env.cout.println("ERROR: out of memory");
+        return;
+    }
+    uint32_t start = micros();
+    int len = nl_selftest(out, size);
+    uint32_t elapsed = micros() - start;
+    env.cout.write((const uint8_t *)out, len);
+    env.cout.printf("selftest took %u ms\n", elapsed / 1000);
+    free(out);
+}
+
+static void engine_bench_one(CommandEnvironment &env, const char *name, nl_config &c) {
+    const int n = 1000, frames = 30;
+    nl_program *p = nl_program_create(&c, n);
+    uint8_t *rgb = (uint8_t *)malloc(n * 3);
+    if (!p || !rgb) {
+        env.cout.printf("%s: out of memory\n", name);
+        nl_program_free(p);
+        free(rgb);
+        return;
+    }
+    int64_t t = 1793000000000LL;
+    nl_program_render(p, t, rgb);  // first frame starts the stepping clock
+    uint32_t start = micros();
+    for (int f = 1; f <= frames; f++) nl_program_render(p, t + f * 33, rgb);
+    uint32_t us = (micros() - start) / frames;
+    env.cout.printf("%s: %u us/frame (%.1f fps max), %u bytes\n", name, us,
+                    us ? 1e6f / us : 0.0f, nl_program_bytes(p));
+    nl_program_free(p);
+    free(rgb);
+}
+
+void cmd_engine_bench(CommandEnvironment &env) {
+    nl_config c;
+    nl_config_defaults(&c, NL_BASE_NORMAL);
+    c.n_colors = 3;
+    c.colors[0] = {0, 255, 255}; c.colors[1] = {255, 184, 0}; c.colors[2] = {255, 0, 255};
+    engine_bench_one(env, "normal", c);
+    c.n_effects = 1;
+    nl_effect_defaults(&c.effects[0], NL_FX_MOTION);
+    engine_bench_one(env, "normal+motion", c);
+    c.base = NL_BASE_FIRE;
+    c.params[0] = 60; c.params[1] = 40;
+    engine_bench_one(env, "fire+motion", c);
+    c.n_effects = 0;
+    engine_bench_one(env, "fire", c);
+    nl_config_defaults(&c, NL_BASE_TETRIS);
+    c.n_colors = 3;
+    c.colors[0] = {0, 255, 255}; c.colors[1] = {255, 184, 0}; c.colors[2] = {255, 0, 255};
+    engine_bench_one(env, "tetris", c);
+    env.cout.printf("free heap %u bytes\n", ESP.getFreeHeap());
 }
 
 // ============================================================================

@@ -1,0 +1,15 @@
+normal_36 18ba3934
+normal_gap_motion_1000 7ec400eb
+normal_motion_neg_300 1660fc56
+normal_motion_nearest_300 f4234d36
+normal_swing_300 588dec6f
+normal_2100_300 a454e43f
+normal_1px_nocolor a2f49d8d
+fire_36 47ed1c08
+fire_one_color_300 0bfaa5a7
+fire_motion_1000 2d639ae5
+fire_2100_300 3905ec38
+tetris_36 1f01eb2a
+tetris_fast_300 229d4533
+tetris_jump_36 68b8db01
+tetris_1px 0fe78295

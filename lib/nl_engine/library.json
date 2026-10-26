@@ -1,0 +1,8 @@
+{
+  "name": "nl_engine",
+  "version": "0.1.0",
+  "description": "Nerd Lights pattern engine, shared with the WebAssembly web preview",
+  "build": {
+    "flags": "-ffp-contract=off -fno-fast-math"
+  }
+}
