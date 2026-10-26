@@ -102,6 +102,17 @@ static const Vector VECTORS[] = {
      nl_config_defaults(&c, NL_BASE_SORTING); c.seed = 81; c.params[0] = 60; }},
   {"automaton_rule110_300", 300, T_2026, 120, 250, 0, 0, [](nl_config &c) {
      nl_config_defaults(&c, NL_BASE_AUTOMATON); colors(c, 2); c.params[0] = 110; c.params[1] = 30; c.seed = 82; }},
+  // The original firmware patterns (Phase 2b)
+  {"twinkle_background_300", 300, T_2026, 120, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_TWINKLE); colors(c, 4); c.params[0] = 30; }},
+  {"explosion_cap_1000", 1000, T_2026, 20, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_EXPLOSION); colors(c, 3); c.params[0] = 50; }},
+  {"meteor_reverse_300", 300, T_2026, 60, 100, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_METEOR); colors(c, 3); c.params[0] = -250; c.params[1] = 30; c.params[2] = 0.5f; }},
+  {"lightning_storm_100", 100, T_2026, 600, 33, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_LIGHTNING); colors(c, 2); c.params[0] = 100; c.seed = 83; }},
+  {"strobe_one_color_10", 10, T_2026, 60, 50, 0, 0, [](nl_config &c) {
+     nl_config_defaults(&c, NL_BASE_STROBE); colors(c, 1); c.params[0] = 5; }},
 };
 
 // "Rain & ripples" -> "rain_ripples"

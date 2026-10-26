@@ -43,7 +43,7 @@ static const Col WHITE = {255, 255, 255};
 
 // --- Normal ---
 static const nl_param_def NORMAL_PARAMS[] = {
-  {"band", "Band width", 1, 40, 1, "px", 6},
+  {"band", "Band width", 1, 100, 1, "px", 6},
   {"gap", "Dark gap", 0, 20, 1, "px", 0},
   {"blend", "Blend", 0, 100, 1, "%", 60},
 };
@@ -152,120 +152,306 @@ static void fire_row(const Program &p, int64_t x0q, int count, Col *out) {
   }
 }
 
-// --- Meteor ---
+// --- Gradient (original firmware) ---
+// Colors blend smoothly across the zone, first color at pixel 0 to the last at
+// the far end. Moved by Motion, it repeats.
+static Col gradient_sample(const Program &p, int64_t xq) {
+  int L = p.n_colors;
+  if (L < 2 || p.n < 2) return p.colors[0];
+  int64_t pq = floor_div(xq * (L - 1), p.n);   // x * (L-1)/L * L / n, in colors
+  int seg = (int)floor_mod(q_floor(pq), L);
+  return mix(p.colors[seg], p.colors[(seg + 1) % L], q_frac(pq));
+}
+
+// --- Meteor (original firmware) ---
+// Back-to-back meteors, one per color, fill the zone and move together. The
+// head is bright and the tail fades behind it, whichever way they move.
 static const nl_param_def METEOR_PARAMS[] = {
-  {"speed", "Speed", 1, 100, 1, "px/s", 20},
-  {"length", "Length", 1, 200, 1, "px", 50},
-  {"tail", "Tail fade", 0, 5, 0.5f, "", 2},
+  {"speed", "Speed", -1000, 1000, 1, "px/s", 20},
+  {"length", "Length", 5, 500, 1, "px", 50},
+  {"tail", "Tail fade", 0.1f, 10, 0.1f, "", 2.8f},
 };
 
 static void meteor_prepare(Program &p) {
-  int64_t span = (int64_t)(p.n + bpi(p, 1)) * Q16;
-  int64_t tr = scale_q16(p.t_ms, bpi(p, 0), 1000);
-  int64_t cy = floor_div(tr, span);
-  p.s.i[0] = tr - cy * span;
-  p.s.i[1] = cy;
+  p.s.i[0] = scale_q16(p.t_ms, bpi(p, 0), 1000);
+}
+
+static Col meteor_at(const Program &p, int idx, int32_t wq) {
+  float len = (float)bpi(p, 1), pix = (float)wq * (1.0f / 65536.0f);
+  float fade = bpi(p, 0) >= 0 ? 1.0f - pix / len : pix / len;
+  return scale(p.colors[idx], powf_(fade, bp(p, 2)));
 }
 
 static Col meteor_sample(const Program &p, int64_t xq) {
-  float len = (float)bpi(p, 1);
-  float d = (float)(p.s.i[0] - xq) * (1.0f / 65536.0f);
-  if (d < 0.0f || d > len) return BLACK;
-  Col c = mix(pal(p, p.s.i[1]), pal(p, p.s.i[1] + 1), d / len);
-  return scale(c, powf_(1.0f - d / len, bp(p, 2)));
+  int64_t lenq = (int64_t)bpi(p, 1) * Q16;
+  int64_t pos = floor_mod(xq + p.s.i[0], lenq * p.n_colors);
+  int idx = (int)(pos / lenq);
+  return meteor_at(p, idx, (int32_t)(pos - idx * lenq));
 }
 
-// --- Twinkle ---
+static void meteor_row(const Program &p, int64_t x0q, int count, Col *out) {
+  int32_t lenq = bpi(p, 1) * (int32_t)Q16;
+  int64_t pos = floor_mod(x0q + p.s.i[0], (int64_t)lenq * p.n_colors);
+  int idx = (int)(pos / lenq);
+  int32_t wq = (int32_t)(pos - (int64_t)idx * lenq);
+  for (int k = 0; k < count; k++) {
+    out[k] = meteor_at(p, idx, wq);
+    wq += (int32_t)Q16;
+    while (wq >= lenq) {
+      wq -= lenq;
+      if (++idx == p.n_colors) idx = 0;
+    }
+  }
+}
+
+// Background of the originals that use one: the first color when there are two or more.
+static Col background(const Program &p) { return p.raw_colors >= 2 ? p.colors[0] : BLACK; }
+
+// Random events, as the originals spawned them: about `count` live at once, each
+// lasting dur_ms, so one starts every dur_ms / count on average. Event k starts
+// at a hashed moment inside slot k, with all times scaled by count to stay
+// integer. Calls draw(k, elapsed_ms) for events still running at t_ms, oldest first.
+template <typename F>
+static void for_events(int64_t t_ms, int count, int dur_ms, int64_t from_ms, uint32_t salt, F draw) {
+  if (count <= 0) return;
+  int64_t now = t_ms * count;
+  for (int64_t k = floor_div(from_ms * count, dur_ms) - 1; k <= floor_div(now, dur_ms); k++) {
+    int64_t start = k * dur_ms + ftoi_floor(hb(k, salt) * (float)dur_ms);
+    float elapsed = (float)(now - start) / (float)count;
+    if (start <= now) draw(k, elapsed);
+  }
+}
+
+// --- Twinkle (original firmware) ---
+// `amount`% of the pixels twinkle at once (at most 100), each for a second. With
+// two or more colors the first is the background and the others twinkle.
 static const nl_param_def TWINKLE_PARAMS[] = {
-  {"density", "Density", 1, 100, 1, "%", 40},
-  {"speed", "Pace", 1, 100, 1, "", 50},
+  {"amount", "Twinkling", 0, 100, 1, "%", 10},
 };
 
-static void twinkle_prepare(Program &p) {
-  Phase ph = phase(p.t_ms, 12 + bpi(p, 1), 120);   // t * (0.1 + speed / 120)
-  p.s.i[0] = ph.k;
-  p.s.f[0] = ph.f;
+static void twinkle_frame(Program &p, Col *a) {
+  const int n = p.n, L = p.raw_colors;
+  Col bg = background(p);
+  for (int i = 0; i < n; i++) a[i] = bg;
+  int count = (int)((float)n * bp(p, 0) / 100.0f);
+  if (count > 100) count = 100;
+  // The original skipped a new twinkle on a pixel that was still twinkling, so
+  // replay the last two seconds to know which ones it kept.
+  struct Live { int pixel; float end; };
+  Live live[128];
+  int nl = 0;
+  const float now = 0.0f;   // elapsed times below are relative to t_ms
+  for_events(p.t_ms, count, 1000, p.t_ms - 2000, 40, [&](int64_t k, float elapsed) {
+    float start = now - elapsed;
+    int w = 0;
+    for (int j = 0; j < nl; j++)
+      if (live[j].end > start) live[w++] = live[j];
+    nl = w;
+    int pixel = ftoi_floor(hb(k, 41) * (float)n);
+    for (int j = 0; j < nl; j++)
+      if (live[j].pixel == pixel) return;
+    if (nl >= 100) return;
+    live[nl++] = {pixel, start + 1000.0f};
+    if (elapsed >= 1000.0f) return;
+    Col c = L >= 2 ? p.colors[1 + ftoi_floor(hb(k, 42) * (float)(L - 1))] : p.colors[0];
+    float level = 1.0f - absf(elapsed - 500.0f) / 500.0f;
+    a[pixel] = mix(bg, c, level * level);
+  });
 }
 
-static Col twinkle_sample(const Program &p, int64_t xq) {
-  int i = pixel_of(xq);
-  float ph = hb(i, 1) + p.s.f[0];
-  int64_t cy = p.s.i[0] + (ph >= 1.0f ? 1 : 0);
-  float f = ph >= 1.0f ? ph - 1.0f : ph;
-  bool lit = hb2(i, cy, 2) < bp(p, 0) / 100.0f;
-  float k = lit ? sin_pi(f) : 0.0f;
-  int idx = ftoi_floor(hb2(i, cy, 3) * (float)p.n_colors);
-  return scale(p.colors[idx], 0.05f + 0.95f * k * k);
-}
-
-// --- Confetti ---
-static const nl_param_def CONFETTI_PARAMS[] = {
-  {"density", "Density", 1, 100, 1, "%", 40},
-  {"speed", "Pace", 1, 100, 1, "", 50},
+// --- Explosion (original firmware) ---
+// Rings burst at random spots and overlap: about `amount`% of the pixels' worth
+// at once (at most 100), each growing to 5-14 px over a second as it fades.
+static const nl_param_def EXPLOSION_PARAMS[] = {
+  {"amount", "Explosions", 1, 100, 1, "%", 10},
 };
 
-static Col confetti_sample(const Program &p, int64_t xq) {
-  int i = pixel_of(xq);
-  // t * (0.2 + speed / 50) * (0.5 + hsh), with the per-pixel factor in thousandths
-  int64_t mi = 500 + ftoi_floor(hb(i, 4) * 1000.0f);
-  int64_t a = p.t_ms * (10 + bpi(p, 1)) * mi, d = 50LL * 1000 * 1000;
-  int64_t k = floor_div(a, d);
-  float ph = (float)(a - k * d) / (float)d + hb(i, 5);
-  int64_t cy = k + (ph >= 1.0f ? 1 : 0);
-  float f = ph >= 1.0f ? ph - 1.0f : ph;
-  bool lit = hb2(i, cy, 6) < bp(p, 0) / 100.0f;
-  int idx = ftoi_floor(hb2(i, cy, 7) * (float)p.n_colors);
-  return scale(p.colors[idx], lit ? (1.0f - f) * (1.0f - f) : 0.0f);
+static void explosion_frame(Program &p, Col *a) {
+  const int n = p.n;
+  Col bg = background(p);
+  for (int i = 0; i < n; i++) a[i] = bg;
+  int count = (int)((float)n * bp(p, 0) / 100.0f);
+  if (count > 100) count = 100;
+  for_events(p.t_ms, count, 1000, p.t_ms - 1000, 43, [&](int64_t k, float elapsed) {
+    if (elapsed >= 1000.0f) return;
+    int center = ftoi_floor(hb(k, 44) * (float)n);
+    int R = 5 + ftoi_floor(hb(k, 45) * 10.0f);
+    Col c = p.colors[ftoi_floor(hb(k, 46) * (float)p.n_colors)];
+    int r = ftoi_floor((float)R * elapsed / 1000.0f);
+    float percent = (float)((R - r) * (R - r)) / (float)(R * R);
+    for (int x = -R; x <= R; x++) {
+      int i = center + x, d = x < 0 ? -x : x;
+      if (i >= 0 && i < n && (d - r < 2 && r - d < 2)) a[i] = mix(a[i], c, percent);
+    }
+  });
 }
 
-// --- Breathe ---
+// --- Confetti (original firmware) ---
+// Random pops of your colors add up and fade. Stepped at 50 Hz: the original
+// faded 5% and popped 1 pixel in 15 per frame at about 27 frames a second.
+static uint32_t cells_bytes(const Program &p) { return (uint32_t)sizeof(Col) * p.n; }
+
+static void confetti_step(Program &p) {
+  Col *c = (Col *)p.state;
+  for (int i = 0; i < p.n; i++) {
+    c[i] = scale(c[i], 0.9727f);
+    if (p.rng.below(1000) < 36) {
+      const Col &add = p.colors[p.rng.below(p.n_colors)];
+      c[i] = col(minf(255.0f, c[i].r + add.r), minf(255.0f, c[i].g + add.g), minf(255.0f, c[i].b + add.b));
+    }
+  }
+}
+
+static void cells_frame(Program &p, Col *a) {
+  const Col *c = (const Col *)p.state;
+  for (int i = 0; i < p.n; i++) a[i] = c[i];
+}
+
+static void cells_init(Program &) {}
+
+// --- Flicker (original firmware) ---
+// Pixels jump to a new blend of all your colors, each at 50-100%, about five
+// times a second.
+static void flicker_step(Program &p) {
+  Col *c = (Col *)p.state;
+  const int L = p.n_colors;
+  for (int i = 0; i < p.n; i++) {
+    if (p.rng.below(1000) >= 100) continue;
+    int r = 0, g = 0, b = 0;
+    for (int j = 0; j < L; j++) {
+      int level = 50 + (int)p.rng.below(50);
+      r += (int)p.colors[j].r * level;
+      g += (int)p.colors[j].g * level;
+      b += (int)p.colors[j].b * level;
+    }
+    c[i] = col((float)(r / (100 * L)), (float)(g / (100 * L)), (float)(b / (100 * L)));
+  }
+}
+
+// --- Breathe (original firmware) ---
+// One color breathes down to 5%; several crossfade one into the next.
 static const nl_param_def BREATHE_PARAMS[] = {
-  {"period", "Period", 1, 20, 1, "s", 4},
+  {"duration", "Duration", 0.25f, 10, 0.25f, "s", 1.5f},
 };
 
 static void breathe_prepare(Program &p) {
-  int64_t period = (int64_t)bpi(p, 0) * 1000;
-  p.s.i[0] = floor_div(p.t_ms, period);
-  p.s.f[0] = 0.06f + 0.94f * (0.5f - 0.5f * cos_turns(turns_q32(p.t_ms, 1, period)));
+  int64_t d = roundi(bp(p, 0) * 1000.0f);
+  const int L = p.n_colors;
+  Col c;
+  if (L == 1) {
+    uint32_t ph = turns_q32(p.t_ms, 1, 2 * d);
+    float amp = (1.0f - cos_turns(ph)) / 2.0f;
+    c = scale(p.colors[0], 0.05f + amp * 0.95f);
+  } else {
+    int64_t pos = floor_mod(p.t_ms, d * L);
+    int idx = (int)(pos / d);
+    uint32_t half_turn = (uint32_t)(((uint64_t)(pos - idx * d) << 31) / (uint64_t)d);
+    c = mix(p.colors[idx], p.colors[(idx + 1) % L], (1.0f - cos_turns(half_turn)) / 2.0f);
+  }
+  p.s.f[0] = c.r; p.s.f[1] = c.g; p.s.f[2] = c.b;
 }
 
-static Col breathe_sample(const Program &p, int64_t) {
-  return scale(pal(p, p.s.i[0]), p.s.f[0]);
-}
+static Col uniform_sample(const Program &p, int64_t) { return col(p.s.f[0], p.s.f[1], p.s.f[2]); }
 
-// --- Explosion ---
-static const nl_param_def EXPLOSION_PARAMS[] = {
-  {"interval", "Interval", 1, 10, 1, "s", 3},
-};
-
-static void explosion_prepare(Program &p) {
-  Phase ph = phase(p.t_ms, 1, bpi(p, 0));
-  p.s.i[0] = ph.k;
-  p.s.i[1] = q16((0.2f + 0.6f * hb(ph.k, 8)) * (float)p.n);
-  p.s.f[0] = ph.f;
-}
-
-static Col explosion_sample(const Program &p, int64_t xq) {
-  int64_t dq = xq - p.s.i[1];
-  float d = (float)(dq < 0 ? -dq : dq) * (1.0f / 65536.0f);
-  float f = p.s.f[0], r = f * (float)p.n * 0.5f;
-  float k = expf_(-(d - r) * (d - r) / 6.0f) * (1.0f - f) + (d < r ? 0.12f * (1.0f - f) : 0.0f);
-  return scale(pal(p, p.s.i[0]), minf(1.0f, k));
-}
-
-// --- Strobe ---
+// --- Strobe (original firmware) ---
+// One color flashes on and off; several step through, no dark in between.
 static const nl_param_def STROBE_PARAMS[] = {
-  {"rate", "Rate", 1, 20, 1, "Hz", 8},
+  {"rate", "Rate", 0.1f, 5, 0.1f, "Hz", 1},
 };
 
 static void strobe_prepare(Program &p) {
-  Phase ph = phase(p.t_ms, bpi(p, 0), 1);
-  p.s.i[0] = ph.k;
-  p.s.f[0] = ph.f < 0.25f ? 1.0f : 0.0f;
+  int64_t k = phase(p.t_ms, roundi(bp(p, 0) * 10.0f), 10).k;
+  Col c = p.n_colors >= 2 ? pal(p, k) : (floor_mod(k, 2) == 0 ? BLACK : p.colors[0]);
+  p.s.f[0] = c.r; p.s.f[1] = c.g; p.s.f[2] = c.b;
 }
 
-static Col strobe_sample(const Program &p, int64_t) {
-  return scale(pal(p, p.s.i[0]), p.s.f[0]);
+// --- Chase (original firmware) ---
+// Dots of colors 2-6 race over color 1 at their own speeds (1, 50, 33, 25 px/s
+// forward, about 29 px/s back), adding together where they cross.
+static void chase_frame(Program &p, Col *a) {
+  const int n = p.n, L = p.raw_colors;
+  const int64_t T = p.t_ms;
+  for (int i = 0; i < n; i++) a[i] = p.colors[0];
+  static const int64_t step_ms[4] = {1000, 20, 30, 40};
+  for (int j = 0; j < 4; j++)
+    if (L >= j + 2) {
+      Col &o = a[floor_mod(floor_div(T, step_ms[j]), n)];
+      const Col &c = p.colors[j + 1];
+      o = col(o.r + c.r, o.g + c.g, o.b + c.b);
+    }
+  if (L >= 6) {
+    int64_t q = floor_mod(floor_div(T, 35), n);
+    if (q != 0) {
+      Col &o = a[n - q];
+      o = col(o.r + p.colors[5].r, o.g + p.colors[5].g, o.b + p.colors[5].b);
+    }
+  }
+  for (int i = 0; i < n; i++) {
+    float m = maxc(a[i]);
+    if (m > 255.0f) a[i] = scale(a[i], 255.0f / m);
+  }
+}
+
+// --- Lightning (original firmware) ---
+// A dim leader flash, then a burst of strikes on a random stretch, in your
+// colors. Higher intensity means more strikes and shorter waits. The original
+// ran this per frame; here a step is a frame.
+static const nl_param_def LIGHTNING_PARAMS[] = {
+  {"intensity", "Intensity", 0, 100, 1, "%", 50},
+};
+
+struct LightningState {
+  int32_t now_ms, last_ms, delay_ms, flash_count;
+  int32_t start, len, color, bri;
+  bool draw;
+};
+
+static uint32_t lightning_bytes(const Program &) { return sizeof(LightningState); }
+
+static void lightning_step(Program &p) {
+  LightningState &s = *(LightningState *)p.state;
+  const int n = p.n, intensity = roundi(bp(p, 0) * 2.55f);
+  s.now_ms += NL_STEP_MS;
+  int bri = 255;
+  if (s.flash_count == 0) {
+    s.color = (int)p.rng.below(p.n_colors);
+    s.start = (int)p.rng.below(n);
+    s.len = 1 + (int)p.rng.below((uint32_t)(n - s.start));
+    int flashes = intensity < 20 ? 4 : 4 + intensity / 20;
+    s.flash_count = ((int)p.rng.below(flashes) + 4) * 2;
+    bri = 52;
+    s.delay_ms = 200;
+    s.last_ms = s.now_ms;
+  } else {
+    bri = 255 / ((int)p.rng.below(3) + 1);
+  }
+  s.draw = false;
+  if (s.flash_count > 3 && (s.flash_count & 1) == 0) {
+    s.draw = true;
+    s.bri = bri;
+    s.flash_count--;
+    s.last_ms = s.now_ms;
+  } else if (s.now_ms - s.last_ms > s.delay_ms) {
+    s.flash_count--;
+    if (s.flash_count < 2) s.flash_count = 0;
+    s.delay_ms = 50 + (int)p.rng.below(100);
+    if (s.flash_count == 2) {
+      int range = 255 - intensity;
+      s.delay_ms = range > 0 ? (int)p.rng.below(range) * 100 : 100;
+    }
+    s.last_ms = s.now_ms;
+  }
+}
+
+static void lightning_frame(Program &p, Col *a) {
+  const LightningState &s = *(const LightningState *)p.state;
+  if (p.n <= 1) {
+    a[0] = p.colors[s.color];
+    return;
+  }
+  if (!s.draw) return;
+  Col c = scale(p.colors[s.color], (float)s.bri / 255.0f);
+  for (int i = s.start; i < s.start + s.len && i < p.n; i++) a[i] = c;
 }
 
 // ============================================================ Scenic
@@ -797,19 +983,24 @@ const BaseDef BASES[NL_BASE_COUNT] = {
    STATEFUL(tetris_frame, tetris_bytes, tetris_init, tetris_step)},
   {"Rainbow", "Classic", "The full spectrum. Add Motion to scroll it.",
    F_NO_COLORS, RAINBOW_PARAMS, COUNT(RAINBOW_PARAMS), STATELESS(rainbow_sample, rainbow_row, nullptr)},
-  {"Meteor", "Classic", "A streak with a fading tail.",
-   0, METEOR_PARAMS, COUNT(METEOR_PARAMS), STATELESS(meteor_sample, nullptr, meteor_prepare)},
-  {"Twinkle", "Classic", "Lights gently fade in and out.",
-   0, TWINKLE_PARAMS, COUNT(TWINKLE_PARAMS), STATELESS(twinkle_sample, nullptr, twinkle_prepare)},
-  {"Confetti", "Classic", "Quick random pops of color.",
-   0, CONFETTI_PARAMS, COUNT(CONFETTI_PARAMS), STATELESS(confetti_sample, nullptr, nullptr)},
-  {"Breathe", "Classic", "Whole zone fades through your colors.",
-   0, BREATHE_PARAMS, COUNT(BREATHE_PARAMS), STATELESS(breathe_sample, nullptr, breathe_prepare)},
-  {"Explosion", "Classic", "Bursts expand from random points.",
-   0, EXPLOSION_PARAMS, COUNT(EXPLOSION_PARAMS), STATELESS(explosion_sample, nullptr, explosion_prepare)},
+  {"Meteor", "Classic",
+   "Meteors, one per color, streak along the zone back to back, each with a fading tail.",
+   0, METEOR_PARAMS, COUNT(METEOR_PARAMS), STATELESS(meteor_sample, meteor_row, meteor_prepare)},
+  {"Twinkle", "Classic",
+   "Pixels twinkle like stars. With two or more colors, the first is the background.",
+   0, TWINKLE_PARAMS, COUNT(TWINKLE_PARAMS), FRAME(twinkle_frame)},
+  {"Confetti", "Classic", "Random pops of your colors that add up and fade.",
+   F_STATEFUL, nullptr, 0, STATEFUL(cells_frame, cells_bytes, cells_init, confetti_step)},
+  {"Breathe", "Classic",
+   "The whole zone breathes. One color fades in and out; several fade one into the next.",
+   0, BREATHE_PARAMS, COUNT(BREATHE_PARAMS), STATELESS(uniform_sample, nullptr, breathe_prepare)},
+  {"Explosion", "Classic",
+   "Rings of color burst at random spots and overlap. With two or more colors, the first is the background.",
+   0, EXPLOSION_PARAMS, COUNT(EXPLOSION_PARAMS), FRAME(explosion_frame)},
   {"Strobe", "Classic",
-   "Hard flashes, cycling colors. Fast flashing can trigger seizures in people with photosensitive epilepsy.",
-   F_WARN, STROBE_PARAMS, COUNT(STROBE_PARAMS), STATELESS(strobe_sample, nullptr, strobe_prepare)},
+   "One color flashes on and off; several step through in turn. Fast flashing can trigger seizures "
+   "in people with photosensitive epilepsy.",
+   F_WARN, STROBE_PARAMS, COUNT(STROBE_PARAMS), STATELESS(uniform_sample, nullptr, strobe_prepare)},
   {"Candles", "Scenic",
    "Every pixel (or every few) is its own candle: independent flicker, warmer when it dips, a soft "
    "glare around each flame, and the odd draft rolling through.",
@@ -850,6 +1041,18 @@ const BaseDef BASES[NL_BASE_COUNT] = {
    0, LAVA_PARAMS, COUNT(LAVA_PARAMS), FRAME(lava_frame)},
   {"Aurora", "Scenic", "Slow, shifting curtains of color, like the northern lights.",
    0, AURORA_PARAMS, COUNT(AURORA_PARAMS), FRAME(aurora_frame)},
+  {"Gradient", "Classic", "Your colors blend smoothly across the zone, first to last.",
+   0, nullptr, 0, STATELESS(gradient_sample, nullptr, nullptr)},
+  {"Chase", "Classic",
+   "Dots of your 2nd to 6th colors race over the first at their own speeds and mix where they meet.",
+   0, nullptr, 0, FRAME(chase_frame)},
+  {"Flicker", "Classic", "Pixels flicker between blends of all your colors, like firelight.",
+   F_STATEFUL, nullptr, 0, STATEFUL(cells_frame, cells_bytes, cells_init, flicker_step)},
+  {"Lightning", "Classic",
+   "A dim leader flash, then bright strikes on a random stretch, in your colors. Higher intensity "
+   "means more strikes, more often.",
+   F_STATEFUL, LIGHTNING_PARAMS, COUNT(LIGHTNING_PARAMS),
+   STATEFUL(lightning_frame, lightning_bytes, cells_init, lightning_step)},
 };
 
 }  // namespace nl
