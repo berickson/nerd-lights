@@ -146,6 +146,7 @@ void cmd_engine_selftest(CommandEnvironment &env);
 void cmd_engine_bench(CommandEnvironment &env);
 void cmd_engine_show(CommandEnvironment &env);
 void cmd_engine_off(CommandEnvironment &env);
+void cmd_engine_gamma(CommandEnvironment &env);
 void render_engine_show();
 nl_program *engine_show_program = nullptr;  // set by engine_show; replaces normal rendering
 void cmd_pattern_info(CommandEnvironment &env);
@@ -3003,6 +3004,8 @@ void setup() {
   commands.emplace_back(
     Command("engine_off", cmd_engine_off, "Stop engine_show and go back to normal rendering"));
   commands.emplace_back(
+    Command("engine_gamma", cmd_engine_gamma, "Show or set the output gamma for engine_show (1.0 = linear, as today; not saved)"));
+  commands.emplace_back(
     Command("pattern_discover", cmd_pattern_discover, "Output pattern definitions as JSON"));
   commands.emplace_back(
     Command("pattern_set", cmd_pattern_set, "Set active pattern <pattern_name>"));
@@ -3906,6 +3909,27 @@ static int32_t engine_utc_offset_s() {
     return d + days * 86400;
 }
 
+// Output gamma for engine_show, to try matching LED light to the web preview.
+// 1.0 is linear: the value sent is the light given off, as the original
+// patterns always ran.
+static float engine_gamma = 1.0f;
+static uint8_t engine_gamma_lut[256];
+
+void cmd_engine_gamma(CommandEnvironment &env) {
+    const char *arg = env.args.getCmdParam(1);
+    if (arg) {
+        float g = atof(arg);
+        if (g < 0.5f || g > 4.0f) {
+            env.cout.println("ERROR: gamma must be 0.5-4.0 (1.0 = linear)");
+            return;
+        }
+        engine_gamma = g;
+        for (int i = 0; i < 256; i++)
+            engine_gamma_lut[i] = (uint8_t)(255.0f * powf(i / 255.0f, g) + 0.5f);
+    }
+    env.cout.printf("engine_gamma %.2f%s\n", engine_gamma, engine_gamma == 1.0f ? " (linear)" : "");
+}
+
 void render_engine_show() {
     static uint8_t rgb[max_led_count * 3];
     static uint32_t offset_checked_ms = 0;
@@ -3914,6 +3938,8 @@ void render_engine_show() {
         offset_checked_ms = millis();
     }
     nl_program_render(engine_show_program, engine_time_ms(), rgb);
+    if (engine_gamma != 1.0f)
+        for (int i = 0; i < led_count * 3; i++) rgb[i] = engine_gamma_lut[rgb[i]];
     for (int i = 0; i < led_count; i++)
         leds[i] = Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
 }
